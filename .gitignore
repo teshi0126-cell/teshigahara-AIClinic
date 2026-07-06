@@ -5,7 +5,7 @@ __pycache__/
 # Virtual Environment
 venv/
 
-# Environment Variables
+# Environment
 .env
 
 # Database
