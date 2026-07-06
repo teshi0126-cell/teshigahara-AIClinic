@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual Environment
+venv/
+
+# Environment Variables
+.env
+
+# Database
+db.sqlite3
+
+# VS Code
+.vscode/
+
+# Logs
+logs/
+*.log
+
+# Audio
+recordings/
+
+# Windows
+Thumbs.db
+Desktop.ini

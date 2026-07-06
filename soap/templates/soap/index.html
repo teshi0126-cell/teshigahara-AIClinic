@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>AIカルテ</title>
+</head>
+<body>
+
+<h1>AIカルテ Ver.0.31：SOAP作成</h1>
+
+<form method="post">
+    {% csrf_token %}
+
+    <h2>診察メモ</h2>
+    <textarea name="medical_note" rows="12" cols="100">{{ medical_note }}</textarea>
+    <br>
+
+    <button type="submit">SOAP作成</button>
+</form>
+
+<h2>SOAP</h2>
+<textarea id="soap_result" rows="20" cols="100">{{ soap_result }}</textarea>
+<br>
+
+<button type="button" onclick="copySOAP()">SOAPをコピー</button>
+
+<p id="copy_message"></p>
+
+<script>
+function copySOAP() {
+    const soapText = document.getElementById("soap_result");
+    soapText.select();
+    soapText.setSelectionRange(0, 99999);
+    navigator.clipboard.writeText(soapText.value);
+
+    document.getElementById("copy_message").innerText = "SOAPをコピーしました。M3 DigiKarに貼り付けできます。";
+}
+</script>
+
+</body>
+</html>
