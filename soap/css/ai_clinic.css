@@ -1,0 +1,62 @@
+body {
+    font-family: "Yu Gothic", "Meiryo", sans-serif;
+    margin: 0;
+    background: #f5f7fa;
+    color: #222;
+}
+
+.container {
+    width: 1000px;
+    margin-left: 80px;
+    padding: 24px 0 60px 0;
+}
+
+.card {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+textarea {
+    width: 100%;
+    font-size: 15px;
+    line-height: 1.5;
+    padding: 10px;
+    box-sizing: border-box;
+}
+
+button {
+    font-size: 15px;
+    padding: 8px 16px;
+    margin: 6px 6px 6px 0;
+    cursor: pointer;
+}
+
+.start {
+    background: #0b72e7;
+    color: white;
+    border: none;
+    border-radius: 6px;
+}
+
+.stop {
+    background: #d93025;
+    color: white;
+    border: none;
+    border-radius: 6px;
+}
+
+.copy {
+    background: #198754;
+    color: white;
+    border: none;
+    border-radius: 6px;
+}
+
+.recording {
+    color: #d93025;
+    font-weight: bold;
+}
