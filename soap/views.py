@@ -1,5 +1,8 @@
 import json
+from django.http import JsonResponse
 from django.shortcuts import render
+from django.views.decorators.csrf import csrf_exempt
+
 from .services.soap_service import SOAPService
 from .services.encounter_service import EncounterService
 from .services.speech_service import SpeechService
@@ -7,18 +10,11 @@ from .services.speech_service import SpeechService
 
 def index(request):
     medical_note = ""
-    transcript = ""
     soap_result = ""
     encounter_json = ""
 
     if request.method == "POST":
         medical_note = request.POST.get("medical_note", "")
-        audio_file = request.FILES.get("audio_file")
-
-        if audio_file:
-            speech_service = SpeechService()
-            transcript = speech_service.transcribe_audio(audio_file)
-            medical_note = transcript
 
         if medical_note:
             encounter_service = EncounterService()
@@ -30,7 +26,24 @@ def index(request):
 
     return render(request, "soap/index.html", {
         "medical_note": medical_note,
-        "transcript": transcript,
-        "encounter_json": encounter_json,
         "soap_result": soap_result,
+        "encounter_json": encounter_json,
     })
+
+
+@csrf_exempt
+def transcribe_chunk(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "POSTのみ対応です"}, status=405)
+
+    audio_file = request.FILES.get("audio_file")
+
+    if not audio_file:
+        return JsonResponse({"error": "音声ファイルがありません"}, status=400)
+
+    try:
+        speech_service = SpeechService()
+        transcript = speech_service.transcribe_audio(audio_file)
+        return JsonResponse({"transcript": transcript})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)

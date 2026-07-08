@@ -10,13 +10,11 @@
             background: #f5f7fa;
             color: #222;
         }
-
         .container {
             width: 1000px;
             margin-left: 80px;
             padding: 24px 0 60px 0;
         }
-
         .card {
             background: white;
             border: 1px solid #ddd;
@@ -25,17 +23,6 @@
             margin-bottom: 20px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.05);
         }
-
-        h1 {
-            font-size: 32px;
-            margin-bottom: 24px;
-        }
-
-        h2 {
-            font-size: 22px;
-            margin-top: 0;
-        }
-
         textarea {
             width: 100%;
             font-size: 15px;
@@ -43,50 +30,32 @@
             padding: 10px;
             box-sizing: border-box;
         }
-
         button {
             font-size: 15px;
             padding: 8px 16px;
             margin: 6px 6px 6px 0;
             cursor: pointer;
         }
-
         .start {
             background: #0b72e7;
             color: white;
             border: none;
             border-radius: 6px;
         }
-
         .stop {
             background: #d93025;
             color: white;
             border: none;
             border-radius: 6px;
         }
-
         .copy {
             background: #198754;
             color: white;
             border: none;
             border-radius: 6px;
         }
-
-        .status {
-            margin-left: 12px;
-            font-weight: bold;
-        }
-
         .recording {
             color: #d93025;
-        }
-
-        details {
-            margin-top: 10px;
-        }
-
-        summary {
-            cursor: pointer;
             font-weight: bold;
         }
     </style>
@@ -95,22 +64,21 @@
 
 <div class="container">
 
-    <h1>AIClinic Ver.0.7：診療用画面</h1>
+    <h1>AIClinic Ver.0.8：分割文字起こし</h1>
 
     <div class="card">
         <h2>診察録音</h2>
         <button type="button" id="startBtn" class="start">🎤 診察開始</button>
         <button type="button" id="stopBtn" class="stop" disabled>■ 停止</button>
-        <span id="status" class="status"></span>
+        <span id="status"></span>
     </div>
 
-    <form id="uploadForm" method="post" enctype="multipart/form-data">
+    <form id="soapForm" method="post">
         {% csrf_token %}
-        <input type="file" name="audio_file" id="audioFile" style="display:none;">
 
         <div class="card">
-            <h2>診察メモ / 文字起こし</h2>
-            <textarea name="medical_note" rows="9">{{ medical_note }}</textarea>
+            <h2>診察メモ / リアルタイム文字起こし</h2>
+            <textarea id="medicalNote" name="medical_note" rows="10">{{ medical_note }}</textarea>
             <br>
             <button type="submit">Encounter JSON ＋ SOAP作成</button>
         </div>
@@ -135,56 +103,105 @@
 
 <script>
 let mediaRecorder;
-let audioChunks = [];
+let stream;
+let isRecording = false;
 
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
 const statusText = document.getElementById("status");
-const audioFileInput = document.getElementById("audioFile");
-const uploadForm = document.getElementById("uploadForm");
+const medicalNote = document.getElementById("medicalNote");
+
+function getCsrfToken() {
+    const name = "csrftoken";
+    const cookies = document.cookie.split(";");
+    for (let cookie of cookies) {
+        cookie = cookie.trim();
+        if (cookie.startsWith(name + "=")) {
+            return decodeURIComponent(cookie.substring(name.length + 1));
+        }
+    }
+    return "";
+}
+
+async function sendAudioChunk(blob) {
+    if (!blob || blob.size < 2000) {
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append("audio_file", blob, "chunk.webm");
+
+    const response = await fetch("/transcribe_chunk/", {
+        method: "POST",
+        headers: {
+            "X-CSRFToken": getCsrfToken()
+        },
+        body: formData
+    });
+
+    const data = await response.json();
+
+    if (data.transcript) {
+        medicalNote.value += data.transcript + "\n";
+    }
+}
 
 startBtn.onclick = async function() {
-    audioChunks = [];
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream);
+    isRecording = true;
 
-    mediaRecorder.ondataavailable = function(event) {
-        audioChunks.push(event.data);
+    const options = { mimeType: "audio/webm;codecs=opus" };
+    mediaRecorder = new MediaRecorder(stream, options);
+
+    mediaRecorder.ondataavailable = async function(event) {
+        if (event.data && event.data.size > 0) {
+            statusText.innerText = "文字起こし中...";
+            await sendAudioChunk(event.data);
+            if (isRecording) {
+                statusText.innerText = "録音中...";
+            }
+        }
     };
 
     mediaRecorder.onstop = function() {
-        const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
-        const audioFile = new File([audioBlob], "recording.webm", { type: "audio/webm" });
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+        }
 
-        const dataTransfer = new DataTransfer();
-        dataTransfer.items.add(audioFile);
-        audioFileInput.files = dataTransfer.files;
-
-        statusText.innerText = "録音終了。SOAP作成中...";
-        uploadForm.submit();
+        isRecording = false;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        statusText.innerText = "録音停止。SOAP作成ボタンを押してください。";
+        statusText.className = "";
     };
 
-    mediaRecorder.start();
+    // 10秒ごとに音声チャンク作成
+    mediaRecorder.start(10000);
 
     startBtn.disabled = true;
     stopBtn.disabled = false;
-    statusText.innerText = "録音中";
-    statusText.className = "status recording";
+    statusText.innerText = "録音中...";
+    statusText.className = "recording";
 };
 
 stopBtn.onclick = function() {
-    mediaRecorder.stop();
+    isRecording = false;
+
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.ondataavailable = null;  // 最後の短い壊れたチャンクを送らない
+        mediaRecorder.stop();
+    }
+
+    if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+    }
+
     startBtn.disabled = false;
     stopBtn.disabled = true;
+    statusText.innerText = "録音停止。SOAP作成ボタンを押してください。";
+    statusText.className = "";
 };
-
-function copySOAP() {
-    const soapText = document.getElementById("soap_result");
-    soapText.select();
-    navigator.clipboard.writeText(soapText.value);
-    document.getElementById("copy_message").innerText = "SOAPをコピーしました。";
-}
 </script>
 
 </body>
