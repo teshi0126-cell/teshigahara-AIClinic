@@ -10,11 +10,13 @@
             background: #f5f7fa;
             color: #222;
         }
+
         .container {
             width: 1000px;
             margin-left: 80px;
             padding: 24px 0 60px 0;
         }
+
         .card {
             background: white;
             border: 1px solid #ddd;
@@ -23,6 +25,7 @@
             margin-bottom: 20px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.05);
         }
+
         textarea {
             width: 100%;
             font-size: 15px;
@@ -30,30 +33,35 @@
             padding: 10px;
             box-sizing: border-box;
         }
+
         button {
             font-size: 15px;
             padding: 8px 16px;
             margin: 6px 6px 6px 0;
             cursor: pointer;
         }
+
         .start {
             background: #0b72e7;
             color: white;
             border: none;
             border-radius: 6px;
         }
+
         .stop {
             background: #d93025;
             color: white;
             border: none;
             border-radius: 6px;
         }
+
         .copy {
             background: #198754;
             color: white;
             border: none;
             border-radius: 6px;
         }
+
         .recording {
             color: #d93025;
             font-weight: bold;
@@ -64,7 +72,7 @@
 
 <div class="container">
 
-    <h1>AIClinic Ver.0.8：分割文字起こし</h1>
+    <h1>AIClinic Sprint 9：自動SOAP更新</h1>
 
     <div class="card">
         <h2>診察録音</h2>
@@ -77,10 +85,10 @@
         {% csrf_token %}
 
         <div class="card">
-            <h2>診察メモ / リアルタイム文字起こし</h2>
+            <h2>診察メモ / 文字起こし</h2>
             <textarea id="medicalNote" name="medical_note" rows="10">{{ medical_note }}</textarea>
             <br>
-            <button type="submit">Encounter JSON ＋ SOAP作成</button>
+            <button type="submit">手動でSOAP作成</button>
         </div>
     </form>
 
@@ -95,7 +103,7 @@
     <div class="card">
         <details>
             <summary>Encounter JSONを表示</summary>
-            <textarea rows="18">{{ encounter_json }}</textarea>
+            <textarea id="encounter_json" rows="18">{{ encounter_json }}</textarea>
         </details>
     </div>
 
@@ -110,6 +118,8 @@ const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
 const statusText = document.getElementById("status");
 const medicalNote = document.getElementById("medicalNote");
+const soapResult = document.getElementById("soap_result");
+const encounterJson = document.getElementById("encounter_json");
 
 function getCsrfToken() {
     const name = "csrftoken";
@@ -143,6 +153,42 @@ async function sendAudioChunk(blob) {
 
     if (data.transcript) {
         medicalNote.value += data.transcript + "\n";
+        statusText.innerText = "SOAP更新中...";
+        await updateSOAP();
+        if (isRecording) {
+            statusText.innerText = "録音中...";
+        }
+    }
+}
+
+async function updateSOAP() {
+    if (!medicalNote.value.trim()) {
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append("medical_note", medicalNote.value);
+
+    const response = await fetch("/generate_soap/", {
+        method: "POST",
+        headers: {
+            "X-CSRFToken": getCsrfToken()
+        },
+        body: formData
+    });
+
+    const data = await response.json();
+
+    if (data.soap_result) {
+        soapResult.value = data.soap_result;
+    }
+
+    if (data.encounter_json) {
+        encounterJson.value = data.encounter_json;
+    }
+
+    if (data.error) {
+        statusText.innerText = "エラー：" + data.error;
     }
 }
 
@@ -172,11 +218,10 @@ startBtn.onclick = async function() {
         isRecording = false;
         startBtn.disabled = false;
         stopBtn.disabled = true;
-        statusText.innerText = "録音停止。SOAP作成ボタンを押してください。";
+        statusText.innerText = "録音停止。必要に応じてSOAPを確認してください。";
         statusText.className = "";
     };
 
-    // 10秒ごとに音声チャンク作成
     mediaRecorder.start(10000);
 
     startBtn.disabled = true;
@@ -189,7 +234,7 @@ stopBtn.onclick = function() {
     isRecording = false;
 
     if (mediaRecorder && mediaRecorder.state === "recording") {
-        mediaRecorder.ondataavailable = null;  // 最後の短い壊れたチャンクを送らない
+        mediaRecorder.ondataavailable = null;
         mediaRecorder.stop();
     }
 
@@ -199,9 +244,15 @@ stopBtn.onclick = function() {
 
     startBtn.disabled = false;
     stopBtn.disabled = true;
-    statusText.innerText = "録音停止。SOAP作成ボタンを押してください。";
+    statusText.innerText = "録音停止。必要に応じてSOAPを確認してください。";
     statusText.className = "";
 };
+
+function copySOAP() {
+    soapResult.select();
+    navigator.clipboard.writeText(soapResult.value);
+    document.getElementById("copy_message").innerText = "SOAPをコピーしました。";
+}
 </script>
 
 </body>

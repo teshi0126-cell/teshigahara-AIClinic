@@ -47,3 +47,30 @@ def transcribe_chunk(request):
         return JsonResponse({"transcript": transcript})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def generate_soap(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "POSTのみ対応です"}, status=405)
+
+    medical_note = request.POST.get("medical_note", "")
+
+    if not medical_note:
+        return JsonResponse({"error": "診察メモがありません"}, status=400)
+
+    try:
+        encounter_service = EncounterService()
+        encounter = encounter_service.create_encounter_json(medical_note)
+        encounter_json = json.dumps(encounter, ensure_ascii=False, indent=2)
+
+        soap_service = SOAPService()
+        soap_result = soap_service.create_soap(medical_note)
+
+        return JsonResponse({
+            "encounter_json": encounter_json,
+            "soap_result": soap_result,
+        })
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
