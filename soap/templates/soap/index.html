@@ -5,24 +5,89 @@
     <title>AIClinic</title>
     <style>
         body {
-            font-family: sans-serif;
+            font-family: "Yu Gothic", "Meiryo", sans-serif;
             margin: 0;
-            background-color: #ffffff;
+            background: #f5f7fa;
+            color: #222;
         }
 
         .container {
-            width: 900px;
-            margin-left: 80px;   /* ← ここで右へ寄せる */
-            padding-top: 20px;
+            width: 1000px;
+            margin-left: 80px;
+            padding: 24px 0 60px 0;
+        }
+
+        .card {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        }
+
+        h1 {
+            font-size: 32px;
+            margin-bottom: 24px;
+        }
+
+        h2 {
+            font-size: 22px;
+            margin-top: 0;
         }
 
         textarea {
             width: 100%;
-            font-size: 14px;
+            font-size: 15px;
+            line-height: 1.5;
+            padding: 10px;
+            box-sizing: border-box;
         }
 
-        h1, h2 {
-            margin-top: 24px;
+        button {
+            font-size: 15px;
+            padding: 8px 16px;
+            margin: 6px 6px 6px 0;
+            cursor: pointer;
+        }
+
+        .start {
+            background: #0b72e7;
+            color: white;
+            border: none;
+            border-radius: 6px;
+        }
+
+        .stop {
+            background: #d93025;
+            color: white;
+            border: none;
+            border-radius: 6px;
+        }
+
+        .copy {
+            background: #198754;
+            color: white;
+            border: none;
+            border-radius: 6px;
+        }
+
+        .status {
+            margin-left: 12px;
+            font-weight: bold;
+        }
+
+        .recording {
+            color: #d93025;
+        }
+
+        details {
+            margin-top: 10px;
+        }
+
+        summary {
+            cursor: pointer;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -30,35 +95,90 @@
 
 <div class="container">
 
-<h1>AIClinic Ver.0.5：音声ファイル文字起こし</h1>
+    <h1>AIClinic Ver.0.7：診療用画面</h1>
 
-<form method="post" enctype="multipart/form-data">
-    {% csrf_token %}
+    <div class="card">
+        <h2>診察録音</h2>
+        <button type="button" id="startBtn" class="start">🎤 診察開始</button>
+        <button type="button" id="stopBtn" class="stop" disabled>■ 停止</button>
+        <span id="status" class="status"></span>
+    </div>
 
-    <h2>音声ファイル</h2>
-    <input type="file" name="audio_file" accept="audio/*">
-    <p>または、下に診察メモを直接入力してください。</p>
+    <form id="uploadForm" method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <input type="file" name="audio_file" id="audioFile" style="display:none;">
 
-    <h2>診察メモ / 文字起こし</h2>
-    <textarea name="medical_note" rows="10">{{ medical_note }}</textarea>
-    <br>
+        <div class="card">
+            <h2>診察メモ / 文字起こし</h2>
+            <textarea name="medical_note" rows="9">{{ medical_note }}</textarea>
+            <br>
+            <button type="submit">Encounter JSON ＋ SOAP作成</button>
+        </div>
+    </form>
 
-    <button type="submit">文字起こし ＋ Encounter JSON ＋ SOAP作成</button>
-</form>
+    <div class="card">
+        <h2>SOAP</h2>
+        <textarea id="soap_result" rows="18">{{ soap_result }}</textarea>
+        <br>
+        <button type="button" class="copy" onclick="copySOAP()">SOAPをコピー</button>
+        <p id="copy_message"></p>
+    </div>
 
-<h2>Encounter JSON</h2>
-<textarea rows="18">{{ encounter_json }}</textarea>
-
-<h2>SOAP</h2>
-<textarea id="soap_result" rows="18">{{ soap_result }}</textarea>
-<br>
-
-<button type="button" onclick="copySOAP()">SOAPをコピー</button>
-<p id="copy_message"></p>
+    <div class="card">
+        <details>
+            <summary>Encounter JSONを表示</summary>
+            <textarea rows="18">{{ encounter_json }}</textarea>
+        </details>
+    </div>
 
 </div>
 
 <script>
+let mediaRecorder;
+let audioChunks = [];
+
+const startBtn = document.getElementById("startBtn");
+const stopBtn = document.getElementById("stopBtn");
+const statusText = document.getElementById("status");
+const audioFileInput = document.getElementById("audioFile");
+const uploadForm = document.getElementById("uploadForm");
+
+startBtn.onclick = async function() {
+    audioChunks = [];
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+
+    mediaRecorder.ondataavailable = function(event) {
+        audioChunks.push(event.data);
+    };
+
+    mediaRecorder.onstop = function() {
+        const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+        const audioFile = new File([audioBlob], "recording.webm", { type: "audio/webm" });
+
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(audioFile);
+        audioFileInput.files = dataTransfer.files;
+
+        statusText.innerText = "録音終了。SOAP作成中...";
+        uploadForm.submit();
+    };
+
+    mediaRecorder.start();
+
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    statusText.innerText = "録音中";
+    statusText.className = "status recording";
+};
+
+stopBtn.onclick = function() {
+    mediaRecorder.stop();
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+};
+
 function copySOAP() {
     const soapText = document.getElementById("soap_result");
     soapText.select();
