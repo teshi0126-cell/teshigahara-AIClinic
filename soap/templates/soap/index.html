@@ -3,38 +3,66 @@
 <head>
     <meta charset="UTF-8">
     <title>AIClinic</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 0;
+            background-color: #ffffff;
+        }
+
+        .container {
+            width: 900px;
+            margin-left: 80px;   /* ← ここで右へ寄せる */
+            padding-top: 20px;
+        }
+
+        textarea {
+            width: 100%;
+            font-size: 14px;
+        }
+
+        h1, h2 {
+            margin-top: 24px;
+        }
+    </style>
 </head>
 <body>
 
-<h1>AIClinic Ver.0.4：Encounter JSON Engine</h1>
+<div class="container">
 
-<form method="post">
+<h1>AIClinic Ver.0.5：音声ファイル文字起こし</h1>
+
+<form method="post" enctype="multipart/form-data">
     {% csrf_token %}
 
-    <h2>診察メモ</h2>
-    <textarea name="medical_note" rows="10" cols="100">{{ medical_note }}</textarea>
+    <h2>音声ファイル</h2>
+    <input type="file" name="audio_file" accept="audio/*">
+    <p>または、下に診察メモを直接入力してください。</p>
+
+    <h2>診察メモ / 文字起こし</h2>
+    <textarea name="medical_note" rows="10">{{ medical_note }}</textarea>
     <br>
 
-    <button type="submit">Encounter JSON ＋ SOAP作成</button>
+    <button type="submit">文字起こし ＋ Encounter JSON ＋ SOAP作成</button>
 </form>
 
 <h2>Encounter JSON</h2>
-<textarea rows="18" cols="100">{{ encounter_json }}</textarea>
+<textarea rows="18">{{ encounter_json }}</textarea>
 
 <h2>SOAP</h2>
-<textarea id="soap_result" rows="18" cols="100">{{ soap_result }}</textarea>
+<textarea id="soap_result" rows="18">{{ soap_result }}</textarea>
 <br>
 
 <button type="button" onclick="copySOAP()">SOAPをコピー</button>
 <p id="copy_message"></p>
 
+</div>
+
 <script>
 function copySOAP() {
     const soapText = document.getElementById("soap_result");
     soapText.select();
-    soapText.setSelectionRange(0, 99999);
     navigator.clipboard.writeText(soapText.value);
-
     document.getElementById("copy_message").innerText = "SOAPをコピーしました。";
 }
 </script>
