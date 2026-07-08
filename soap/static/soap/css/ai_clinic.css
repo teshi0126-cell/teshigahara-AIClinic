@@ -60,3 +60,24 @@ button {
     color: #d93025;
     font-weight: bold;
 }
+
+.check-item {
+    padding: 6px 8px;
+    margin: 4px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.check-item.important {
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+}
+
+.check-item.normal {
+    background: #f8f9fa;
+    border-left: 4px solid #adb5bd;
+}
+
+.check-category {
+    font-weight: bold;
+    margin-right: 8px;
+}
