@@ -12,9 +12,9 @@ class SpeechService:
     def __init__(self):
         self.medical_dictionary = MedicalDictionaryService()
 
-    def transcribe_audio(self, audio_file) -> str:
+    def transcribe_audio(self, audio_file, intake_note: str = "") -> str:
         file_bytes = audio_file.read()
-        prompt = self.medical_dictionary.build_transcription_prompt()
+        prompt = self.medical_dictionary.build_transcription_prompt(intake_note)
 
         try:
             transcript = client.audio.transcriptions.create(
