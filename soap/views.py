@@ -10,6 +10,7 @@ from .services.cds_service import CDSService
 from .services.reasoning.engine import ClinicalReasoningEngine
 from .services.referral_service import ReferralService
 from .services.conversation_service import ConversationService
+from .services.speaker_role_service import SpeakerRoleService
 
 
 def build_medical_note(intake_note: str, encounter_note: str) -> str:
@@ -39,6 +40,35 @@ def build_ai_outputs(combined_note: str):
     return encounter_json, soap_result, clinical_checks, diagnoses
 
 
+def build_combined_note_from_request(request):
+    intake_note = request.POST.get("intake_note", "")
+    conversation_chunks_raw = request.POST.get("conversation_chunks", "")
+    encounter_note = request.POST.get("medical_note", "")
+
+    try:
+        conversation_chunks = json.loads(conversation_chunks_raw) if conversation_chunks_raw else []
+    except json.JSONDecodeError:
+        conversation_chunks = []
+
+    conversation_service = ConversationService()
+    speaker_role_service = SpeakerRoleService()
+
+    if conversation_chunks:
+        conversation_text = conversation_service.build_conversation_text(conversation_chunks)
+        structured_items = speaker_role_service.structure_conversation(conversation_text)
+        structured_text = speaker_role_service.to_text(structured_items)
+
+        combined_note = conversation_service.build_combined_note(
+            intake_note=intake_note,
+            conversation_text=conversation_text,
+            structured_conversation_text=structured_text,
+        )
+    else:
+        combined_note = build_medical_note(intake_note, encounter_note)
+
+    return intake_note, encounter_note, conversation_chunks, combined_note
+
+
 def index(request):
     intake_note = ""
     encounter_note = ""
@@ -50,9 +80,7 @@ def index(request):
     referral_result = ""
 
     if request.method == "POST":
-        intake_note = request.POST.get("intake_note", "")
-        encounter_note = request.POST.get("medical_note", "")
-        combined_note = build_medical_note(intake_note, encounter_note)
+        intake_note, encounter_note, conversation_chunks, combined_note = build_combined_note_from_request(request)
 
         if combined_note:
             encounter_json, soap_result, clinical_checks, diagnoses = build_ai_outputs(combined_note)
@@ -82,7 +110,11 @@ def transcribe_chunk(request):
     try:
         speech_service = SpeechService()
         transcript = speech_service.transcribe_audio(audio_file)
-        return JsonResponse({"transcript": transcript})
+
+        return JsonResponse({
+            "transcript": transcript,
+        })
+
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
@@ -92,25 +124,7 @@ def generate_soap(request):
     if request.method != "POST":
         return JsonResponse({"error": "POSTのみ対応です"}, status=405)
 
-    intake_note = request.POST.get("intake_note", "")
-    conversation_chunks_raw = request.POST.get("conversation_chunks", "")
-    encounter_note = request.POST.get("medical_note", "")
-
-    try:
-        if conversation_chunks_raw:
-            conversation_chunks = json.loads(conversation_chunks_raw)
-        else:
-            conversation_chunks = []
-    except json.JSONDecodeError:
-        conversation_chunks = []
-
-    conversation_service = ConversationService()
-
-    if conversation_chunks:
-        conversation_text = conversation_service.build_conversation_text(conversation_chunks)
-        combined_note = conversation_service.build_combined_note(intake_note, conversation_text)
-    else:
-        combined_note = build_medical_note(intake_note, encounter_note)
+    intake_note, encounter_note, conversation_chunks, combined_note = build_combined_note_from_request(request)
 
     if not combined_note:
         return JsonResponse({"error": "診察データがありません"}, status=400)
@@ -134,25 +148,7 @@ def generate_referral(request):
     if request.method != "POST":
         return JsonResponse({"error": "POSTのみ対応です"}, status=405)
 
-    intake_note = request.POST.get("intake_note", "")
-    conversation_chunks_raw = request.POST.get("conversation_chunks", "")
-    encounter_note = request.POST.get("medical_note", "")
-
-    try:
-        if conversation_chunks_raw:
-            conversation_chunks = json.loads(conversation_chunks_raw)
-        else:
-            conversation_chunks = []
-    except json.JSONDecodeError:
-        conversation_chunks = []
-
-    conversation_service = ConversationService()
-
-    if conversation_chunks:
-        conversation_text = conversation_service.build_conversation_text(conversation_chunks)
-        combined_note = conversation_service.build_combined_note(intake_note, conversation_text)
-    else:
-        combined_note = build_medical_note(intake_note, encounter_note)
+    intake_note, encounter_note, conversation_chunks, combined_note = build_combined_note_from_request(request)
 
     if not combined_note:
         return JsonResponse({"error": "診察データがありません"}, status=400)

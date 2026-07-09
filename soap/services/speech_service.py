@@ -16,4 +16,23 @@ class SpeechService:
             language="ja",
         )
 
-        return transcript.text
+        return self.correct_medical_terms(transcript.text)
+
+    def correct_medical_terms(self, text: str) -> str:
+        corrections = {
+            "イントーフォッセキ": "咽頭発赤",
+            "いんとうほっせき": "咽頭発赤",
+            "イントウホッセキ": "咽頭発赤",
+            "SPO2": "SpO2",
+            "spo2": "SpO2",
+            "サチュレーション": "SpO2",
+            "コロナ抗原は陰性": "コロナ抗原陰性",
+            "コロナ抗原が陰性": "コロナ抗原陰性",
+        }
+
+        corrected = text
+
+        for wrong, right in corrections.items():
+            corrected = corrected.replace(wrong, right)
+
+        return corrected
