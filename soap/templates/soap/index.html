@@ -10,88 +10,106 @@
 
 <div class="container">
 
-    <h1>AIClinic Sprint17-B：受付問診対応</h1>
+    <header class="app-header">
+        <h1>AIClinic Clinical Workspace</h1>
+        <div id="status" class="status-text">待機中</div>
+    </header>
 
-    <div class="card">
+    <section class="card">
         <h2>受付問診</h2>
-        <textarea id="intakeNote" name="intake_note" rows="6">{{ intake_note }}</textarea>
-        <p>受付で記載された問診、またはDigiKarコメント欄の内容を貼り付けます。</p>
-    </div>
+        <textarea id="intakeNote" name="intake_note" rows="5">{{ intake_note }}</textarea>
+        <p class="hint">受付問診またはDigiKarコメント欄の内容を貼り付けます。</p>
+    </section>
 
-    <div class="card">
+    <section class="card recording-card">
         <h2>診察録音</h2>
         <button type="button" id="startBtn" class="start">🎤 診察開始</button>
         <button type="button" id="stopBtn" class="stop" disabled>■ 停止</button>
-        <span id="status"></span>
-    </div>
+    </section>
 
-    <form id="soapForm" method="post">
-        {% csrf_token %}
+    <section class="card">
+        <h2>診察メモ / 音声文字起こし</h2>
 
-        <input type="hidden" name="intake_note" id="intakeNoteHidden">
+        <form id="soapForm" method="post">
+            {% csrf_token %}
+            <input type="hidden" name="intake_note" id="intakeNoteHidden">
 
-        <div class="card">
-            <h2>診察メモ / 音声文字起こし</h2>
-            <textarea id="medicalNote" name="medical_note" rows="10">{{ medical_note }}</textarea>
+            <textarea id="medicalNote" name="medical_note" rows="8">{{ medical_note }}</textarea>
             <br>
+
             <button type="submit" onclick="syncIntakeBeforeSubmit()">手動でSOAP作成</button>
             <button type="button" class="copy" onclick="generateReferral()">紹介状下書き作成</button>
-        </div>
-    </form>
+        </form>
+    </section>
 
-    <div class="card">
-        <h2>診療支援チェック</h2>
-        <div id="clinical_checks">
-            {% for check in clinical_checks %}
-                <div class="check-item {{ check.level }}">
-                    <span class="check-category">[{{ check.category }}]</span>
-                    <label>
-                        <input type="checkbox" {% if check.checked %}checked{% endif %}>
-                        {{ check.item }}
-                    </label>
-                </div>
-            {% endfor %}
+    <section class="card soap-main">
+        <div class="section-title-row">
+            <h2>SOAP</h2>
+            <span id="soapStatus" class="badge">待機中</span>
         </div>
-    </div>
 
-    <div class="card">
-        <h2>鑑別診断候補</h2>
-        <div id="diagnosis_list">
-            {% for dx in diagnoses %}
-                <div class="diagnosis-card">
-                    <h3>{{ dx.name }}</h3>
-                    <ul>
-                        {% for reason in dx.reasons %}
-                            <li>{{ reason }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-            {% endfor %}
-        </div>
-    </div>
-
-    <div class="card">
-        <h2>SOAP</h2>
-        <textarea id="soap_result" rows="18">{{ soap_result }}</textarea>
+        <textarea id="soap_result" rows="22">{{ soap_result }}</textarea>
         <br>
+
         <button type="button" class="copy" onclick="copySOAP()">SOAPをコピー</button>
         <p id="copy_message"></p>
-    </div>
+    </section>
 
-    <div class="card">
-        <h2>紹介状下書き</h2>
-        <textarea id="referral_result" rows="18">{{ referral_result }}</textarea>
-        <br>
-        <button type="button" class="copy" onclick="copyReferral()">紹介状をコピー</button>
-        <p id="referral_copy_message"></p>
-    </div>
-
-    <div class="card">
+    <section class="card">
         <details>
-            <summary>Encounter JSONを表示</summary>
-            <textarea id="encounter_json" rows="18">{{ encounter_json }}</textarea>
+            <summary>診療支援チェック</summary>
+            <div id="clinical_checks" class="details-content">
+                {% for check in clinical_checks %}
+                    <div class="check-item {{ check.level }}">
+                        <span class="check-category">[{{ check.category }}]</span>
+                        <label>
+                            <input type="checkbox" {% if check.checked %}checked{% endif %}>
+                            {{ check.item }}
+                        </label>
+                    </div>
+                {% endfor %}
+            </div>
         </details>
-    </div>
+    </section>
+
+    <section class="card">
+        <details>
+            <summary>鑑別診断候補</summary>
+            <div id="diagnosis_list" class="details-content">
+                {% for dx in diagnoses %}
+                    <div class="diagnosis-card">
+                        <h3>{{ dx.name }}</h3>
+                        <ul>
+                            {% for reason in dx.reasons %}
+                                <li>{{ reason }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                {% endfor %}
+            </div>
+        </details>
+    </section>
+
+    <section class="card">
+        <details>
+            <summary>紹介状下書き</summary>
+            <div class="details-content">
+                <textarea id="referral_result" rows="18">{{ referral_result }}</textarea>
+                <br>
+                <button type="button" class="copy" onclick="copyReferral()">紹介状をコピー</button>
+                <p id="referral_copy_message"></p>
+            </div>
+        </details>
+    </section>
+
+    <section class="card">
+        <details>
+            <summary>Encounter JSON（開発用）</summary>
+            <div class="details-content">
+                <textarea id="encounter_json" rows="18">{{ encounter_json }}</textarea>
+            </div>
+        </details>
+    </section>
 
 </div>
 

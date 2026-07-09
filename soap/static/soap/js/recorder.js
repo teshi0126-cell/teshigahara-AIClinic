@@ -1,11 +1,15 @@
 let mediaRecorder;
 let stream;
 let isRecording = false;
+
+let realtimeChunks = [];
+let fullAudioChunks = [];
 let conversationChunks = [];
 
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
 const statusText = document.getElementById("status");
+const soapStatus = document.getElementById("soapStatus");
 
 const intakeNote = document.getElementById("intakeNote");
 const intakeNoteHidden = document.getElementById("intakeNoteHidden");
@@ -13,7 +17,6 @@ const medicalNote = document.getElementById("medicalNote");
 
 const soapResult = document.getElementById("soap_result");
 const referralResult = document.getElementById("referral_result");
-
 const encounterJson = document.getElementById("encounter_json");
 
 const clinicalChecks = document.getElementById("clinical_checks");
@@ -21,6 +24,12 @@ const diagnosisList = document.getElementById("diagnosis_list");
 
 function syncIntakeBeforeSubmit() {
     intakeNoteHidden.value = intakeNote.value;
+}
+
+function setSoapStatus(text) {
+    if (soapStatus) {
+        soapStatus.innerText = text;
+    }
 }
 
 function getCsrfToken() {
@@ -74,11 +83,11 @@ function renderDiagnoses(diagnoses) {
     });
 }
 
-async function sendAudioChunk(blob) {
-    if (!blob || blob.size < 2000) return;
+async function transcribeBlob(blob, filename) {
+    if (!blob || blob.size < 500) return "";
 
     const formData = new FormData();
-    formData.append("audio_file", blob, "chunk.webm");
+    formData.append("audio_file", blob, filename);
 
     const response = await fetch("/transcribe_chunk/", {
         method: "POST",
@@ -90,21 +99,13 @@ async function sendAudioChunk(blob) {
 
     const data = await response.json();
 
-    if (data.transcript) {
-        const transcript = data.transcript.trim();
-
-        if (transcript) {
-            conversationChunks.push(transcript);
-            medicalNote.value += transcript + "\n";
-        }
-
-        statusText.innerText = "SOAP更新中...";
-        await updateSOAP();
-
-        if (isRecording) {
-            statusText.innerText = "録音中...";
-        }
+    if (data.error) {
+        statusText.innerText = "文字起こしエラー";
+        setSoapStatus("エラー");
+        return "";
     }
+
+    return (data.transcript || "").trim();
 }
 
 async function updateSOAP() {
@@ -116,6 +117,7 @@ async function updateSOAP() {
     formData.append("intake_note", intakeNote.value);
     formData.append("medical_note", medicalNote.value);
     formData.append("conversation_chunks", JSON.stringify(conversationChunks));
+    formData.append("current_soap", soapResult.value);
 
     const response = await fetch("/generate_soap/", {
         method: "POST",
@@ -129,6 +131,7 @@ async function updateSOAP() {
 
     if (data.soap_result) {
         soapResult.value = data.soap_result;
+        setSoapStatus("更新済み");
     }
 
     if (data.encounter_json) {
@@ -164,6 +167,58 @@ async function updateSOAP() {
 
     if (data.diagnoses) {
         renderDiagnoses(data.diagnoses);
+    }
+
+    if (data.error) {
+        statusText.innerText = "エラー：" + data.error;
+        setSoapStatus("エラー");
+    }
+}
+
+async function handleRealtimeChunk(blob) {
+    const transcript = await transcribeBlob(blob, "chunk.webm");
+
+    if (transcript) {
+        conversationChunks.push(transcript);
+        medicalNote.value += transcript + "\n";
+
+        statusText.innerText = "SOAP更新中...";
+        setSoapStatus("更新中");
+
+        await updateSOAP();
+
+        if (isRecording) {
+            statusText.innerText = "録音中...";
+        }
+    }
+}
+
+async function finalizeFullRecording() {
+    if (fullAudioChunks.length === 0) return;
+
+    statusText.innerText = "最終文字起こし中...";
+    setSoapStatus("最終文字起こし中");
+
+    const fullBlob = new Blob(fullAudioChunks, {
+        type: "audio/webm;codecs=opus"
+    });
+
+    const finalTranscript = await transcribeBlob(fullBlob, "full_recording.webm");
+
+    if (finalTranscript) {
+        medicalNote.value = finalTranscript + "\n";
+        conversationChunks = [finalTranscript];
+
+        statusText.innerText = "最終SOAP更新中...";
+        setSoapStatus("最終更新中");
+
+        await updateSOAP();
+
+        statusText.innerText = "録音停止";
+        setSoapStatus("更新済み");
+    } else {
+        statusText.innerText = "録音停止。最終文字起こしなし。";
+        setSoapStatus("確認待ち");
     }
 }
 
@@ -216,8 +271,15 @@ function copyReferral() {
 }
 
 startBtn.onclick = async function() {
+    realtimeChunks = [];
+    fullAudioChunks = [];
     conversationChunks = [];
+
     medicalNote.value = "";
+    soapResult.value = "";
+    encounterJson.value = "";
+
+    setSoapStatus("録音中");
 
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
@@ -229,16 +291,20 @@ startBtn.onclick = async function() {
 
     mediaRecorder.ondataavailable = async function(event) {
         if (event.data && event.data.size > 0) {
-            statusText.innerText = "文字起こし中...";
-            await sendAudioChunk(event.data);
+            fullAudioChunks.push(event.data);
 
             if (isRecording) {
-                statusText.innerText = "録音中...";
+                statusText.innerText = "文字起こし中...";
+                await handleRealtimeChunk(event.data);
+
+                if (isRecording) {
+                    statusText.innerText = "録音中...";
+                }
             }
         }
     };
 
-    mediaRecorder.onstop = function() {
+    mediaRecorder.onstop = async function() {
         if (stream) {
             stream.getTracks().forEach(track => track.stop());
         }
@@ -246,10 +312,11 @@ startBtn.onclick = async function() {
         isRecording = false;
         startBtn.disabled = false;
         stopBtn.disabled = true;
-        statusText.innerText = "録音停止";
+
+        await finalizeFullRecording();
     };
 
-    mediaRecorder.start(10000);
+    mediaRecorder.start(5000);
 
     startBtn.disabled = true;
     stopBtn.disabled = false;
@@ -266,6 +333,6 @@ stopBtn.onclick = function() {
             if (mediaRecorder.state === "recording") {
                 mediaRecorder.stop();
             }
-        }, 300);
+        }, 1200);
     }
 };

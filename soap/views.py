@@ -4,6 +4,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 
 from .services.soap_service import SOAPService
+from .services.incremental_soap_service import IncrementalSOAPService
 from .services.encounter_service import EncounterService
 from .services.speech_service import SpeechService
 from .services.cds_service import CDSService
@@ -23,13 +24,17 @@ def build_medical_note(intake_note: str, encounter_note: str) -> str:
 """.strip()
 
 
-def build_ai_outputs(combined_note: str):
+def build_ai_outputs(combined_note: str, current_soap: str = ""):
     encounter_service = EncounterService()
     encounter = encounter_service.create_encounter_json(combined_note)
     encounter_json = json.dumps(encounter, ensure_ascii=False, indent=2)
 
-    soap_service = SOAPService()
-    soap_result = soap_service.create_soap(combined_note)
+    if current_soap.strip():
+        soap_service = IncrementalSOAPService()
+        soap_result = soap_service.update_soap(current_soap, combined_note)
+    else:
+        soap_service = SOAPService()
+        soap_result = soap_service.create_soap(combined_note)
 
     cds_service = CDSService()
     clinical_checks = cds_service.get_checks(combined_note, encounter)
@@ -125,12 +130,16 @@ def generate_soap(request):
         return JsonResponse({"error": "POSTのみ対応です"}, status=405)
 
     intake_note, encounter_note, conversation_chunks, combined_note = build_combined_note_from_request(request)
+    current_soap = request.POST.get("current_soap", "")
 
     if not combined_note:
         return JsonResponse({"error": "診察データがありません"}, status=400)
 
     try:
-        encounter_json, soap_result, clinical_checks, diagnoses = build_ai_outputs(combined_note)
+        encounter_json, soap_result, clinical_checks, diagnoses = build_ai_outputs(
+            combined_note,
+            current_soap=current_soap,
+        )
 
         return JsonResponse({
             "encounter_json": encounter_json,
