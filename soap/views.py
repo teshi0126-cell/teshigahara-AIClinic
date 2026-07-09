@@ -11,8 +11,20 @@ from .services.reasoning.engine import ClinicalReasoningEngine
 from .services.referral_service import ReferralService
 
 
+def build_medical_note(intake_note: str, encounter_note: str) -> str:
+    return f"""
+【受付問診】
+{intake_note}
+
+【診察メモ・音声文字起こし】
+{encounter_note}
+""".strip()
+
+
 def index(request):
-    medical_note = ""
+    intake_note = ""
+    encounter_note = ""
+    combined_note = ""
     soap_result = ""
     encounter_json = ""
     clinical_checks = []
@@ -20,24 +32,28 @@ def index(request):
     referral_result = ""
 
     if request.method == "POST":
-        medical_note = request.POST.get("medical_note", "")
+        intake_note = request.POST.get("intake_note", "")
+        encounter_note = request.POST.get("medical_note", "")
+        combined_note = build_medical_note(intake_note, encounter_note)
 
-        if medical_note:
+        if combined_note:
             encounter_service = EncounterService()
-            encounter = encounter_service.create_encounter_json(medical_note)
+            encounter = encounter_service.create_encounter_json(combined_note)
             encounter_json = json.dumps(encounter, ensure_ascii=False, indent=2)
 
             soap_service = SOAPService()
-            soap_result = soap_service.create_soap(medical_note)
+            soap_result = soap_service.create_soap(combined_note)
 
             cds_service = CDSService()
-            clinical_checks = cds_service.get_checks(medical_note, encounter)
+            clinical_checks = cds_service.get_checks(combined_note, encounter)
 
             reasoning = ClinicalReasoningEngine()
-            diagnoses = reasoning.evaluate(medical_note, encounter)
+            diagnoses = reasoning.evaluate(combined_note, encounter)
 
     return render(request, "soap/index.html", {
-        "medical_note": medical_note,
+        "intake_note": intake_note,
+        "medical_note": encounter_note,
+        "combined_note": combined_note,
         "soap_result": soap_result,
         "encounter_json": encounter_json,
         "clinical_checks": clinical_checks,
@@ -69,24 +85,26 @@ def generate_soap(request):
     if request.method != "POST":
         return JsonResponse({"error": "POSTのみ対応です"}, status=405)
 
-    medical_note = request.POST.get("medical_note", "")
+    intake_note = request.POST.get("intake_note", "")
+    encounter_note = request.POST.get("medical_note", "")
+    combined_note = build_medical_note(intake_note, encounter_note)
 
-    if not medical_note:
-        return JsonResponse({"error": "診察メモがありません"}, status=400)
+    if not combined_note:
+        return JsonResponse({"error": "診察データがありません"}, status=400)
 
     try:
         encounter_service = EncounterService()
-        encounter = encounter_service.create_encounter_json(medical_note)
+        encounter = encounter_service.create_encounter_json(combined_note)
         encounter_json = json.dumps(encounter, ensure_ascii=False, indent=2)
 
         soap_service = SOAPService()
-        soap_result = soap_service.create_soap(medical_note)
+        soap_result = soap_service.create_soap(combined_note)
 
         cds_service = CDSService()
-        clinical_checks = cds_service.get_checks(medical_note, encounter)
+        clinical_checks = cds_service.get_checks(combined_note, encounter)
 
         reasoning = ClinicalReasoningEngine()
-        diagnoses = reasoning.evaluate(medical_note, encounter)
+        diagnoses = reasoning.evaluate(combined_note, encounter)
 
         return JsonResponse({
             "encounter_json": encounter_json,
@@ -104,17 +122,19 @@ def generate_referral(request):
     if request.method != "POST":
         return JsonResponse({"error": "POSTのみ対応です"}, status=405)
 
-    medical_note = request.POST.get("medical_note", "")
+    intake_note = request.POST.get("intake_note", "")
+    encounter_note = request.POST.get("medical_note", "")
+    combined_note = build_medical_note(intake_note, encounter_note)
 
-    if not medical_note:
-        return JsonResponse({"error": "診察メモがありません"}, status=400)
+    if not combined_note:
+        return JsonResponse({"error": "診察データがありません"}, status=400)
 
     try:
         encounter_service = EncounterService()
-        encounter = encounter_service.create_encounter_json(medical_note)
+        encounter = encounter_service.create_encounter_json(combined_note)
 
         referral_service = ReferralService()
-        referral_result = referral_service.create_referral(medical_note, encounter)
+        referral_result = referral_service.create_referral(combined_note, encounter)
 
         return JsonResponse({
             "referral_result": referral_result,

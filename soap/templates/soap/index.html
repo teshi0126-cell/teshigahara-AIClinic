@@ -10,7 +10,13 @@
 
 <div class="container">
 
-    <h1>AIClinic Sprint17-A：紹介状エンジン</h1>
+    <h1>AIClinic Sprint17-B：受付問診対応</h1>
+
+    <div class="card">
+        <h2>受付問診</h2>
+        <textarea id="intakeNote" name="intake_note" rows="6">{{ intake_note }}</textarea>
+        <p>受付で記載された問診、またはDigiKarコメント欄の内容を貼り付けます。</p>
+    </div>
 
     <div class="card">
         <h2>診察録音</h2>
@@ -22,11 +28,13 @@
     <form id="soapForm" method="post">
         {% csrf_token %}
 
+        <input type="hidden" name="intake_note" id="intakeNoteHidden">
+
         <div class="card">
-            <h2>診察メモ / 文字起こし</h2>
+            <h2>診察メモ / 音声文字起こし</h2>
             <textarea id="medicalNote" name="medical_note" rows="10">{{ medical_note }}</textarea>
             <br>
-            <button type="submit">手動でSOAP作成</button>
+            <button type="submit" onclick="syncIntakeBeforeSubmit()">手動でSOAP作成</button>
             <button type="button" class="copy" onclick="generateReferral()">紹介状下書き作成</button>
         </div>
     </form>
