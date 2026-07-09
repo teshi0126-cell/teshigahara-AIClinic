@@ -1,6 +1,7 @@
 let mediaRecorder;
 let stream;
 let isRecording = false;
+let conversationChunks = [];
 
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
@@ -90,7 +91,12 @@ async function sendAudioChunk(blob) {
     const data = await response.json();
 
     if (data.transcript) {
-        medicalNote.value += data.transcript + "\n";
+        const transcript = data.transcript.trim();
+
+        if (transcript) {
+            conversationChunks.push(transcript);
+            medicalNote.value += transcript + "\n";
+        }
 
         statusText.innerText = "SOAP更新中...";
         await updateSOAP();
@@ -109,6 +115,7 @@ async function updateSOAP() {
     const formData = new FormData();
     formData.append("intake_note", intakeNote.value);
     formData.append("medical_note", medicalNote.value);
+    formData.append("conversation_chunks", JSON.stringify(conversationChunks));
 
     const response = await fetch("/generate_soap/", {
         method: "POST",
@@ -173,6 +180,7 @@ async function generateReferral() {
     const formData = new FormData();
     formData.append("intake_note", intakeNote.value);
     formData.append("medical_note", medicalNote.value);
+    formData.append("conversation_chunks", JSON.stringify(conversationChunks));
 
     const response = await fetch("/generate_referral/", {
         method: "POST",
@@ -208,6 +216,9 @@ function copyReferral() {
 }
 
 startBtn.onclick = async function() {
+    conversationChunks = [];
+    medicalNote.value = "";
+
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
     isRecording = true;
