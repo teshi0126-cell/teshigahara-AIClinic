@@ -10,7 +10,7 @@
 
 <div class="container">
 
-    <h1>AIClinic Sprint 13：診療支援チェック強化</h1>
+    <h1>AIClinic Sprint17-A：紹介状エンジン</h1>
 
     <div class="card">
         <h2>診察録音</h2>
@@ -27,23 +27,40 @@
             <textarea id="medicalNote" name="medical_note" rows="10">{{ medical_note }}</textarea>
             <br>
             <button type="submit">手動でSOAP作成</button>
+            <button type="button" class="copy" onclick="generateReferral()">紹介状下書き作成</button>
         </div>
     </form>
 
     <div class="card">
-    <h2>診療支援チェック</h2>
-    <div id="clinical_checks">
-        {% for check in clinical_checks %}
-            <div class="check-item {{ check.level }}">
-                <span class="check-category">[{{ check.category }}]</span>
-                <label>
-                    <input type="checkbox" {% if check.checked %}checked{% endif %}>
-                    {{ check.item }}
-                </label>
-            </div>
-        {% endfor %}
+        <h2>診療支援チェック</h2>
+        <div id="clinical_checks">
+            {% for check in clinical_checks %}
+                <div class="check-item {{ check.level }}">
+                    <span class="check-category">[{{ check.category }}]</span>
+                    <label>
+                        <input type="checkbox" {% if check.checked %}checked{% endif %}>
+                        {{ check.item }}
+                    </label>
+                </div>
+            {% endfor %}
+        </div>
     </div>
-</div>
+
+    <div class="card">
+        <h2>鑑別診断候補</h2>
+        <div id="diagnosis_list">
+            {% for dx in diagnoses %}
+                <div class="diagnosis-card">
+                    <h3>{{ dx.name }}</h3>
+                    <ul>
+                        {% for reason in dx.reasons %}
+                            <li>{{ reason }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
 
     <div class="card">
         <h2>SOAP</h2>
@@ -51,6 +68,14 @@
         <br>
         <button type="button" class="copy" onclick="copySOAP()">SOAPをコピー</button>
         <p id="copy_message"></p>
+    </div>
+
+    <div class="card">
+        <h2>紹介状下書き</h2>
+        <textarea id="referral_result" rows="18">{{ referral_result }}</textarea>
+        <br>
+        <button type="button" class="copy" onclick="copyReferral()">紹介状をコピー</button>
+        <p id="referral_copy_message"></p>
     </div>
 
     <div class="card">

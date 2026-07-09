@@ -1,11 +1,11 @@
-from .ai_engine import AIEngine
+from .openai_service import OpenAIService
 from .encounter_service import EncounterService
 from soap.prompts.soap_prompt import SOAP_SYSTEM_PROMPT
 
 
 class SOAPService:
     def __init__(self):
-        self.ai = AIEngine()
+        self.ai = OpenAIService()
         self.encounter_service = EncounterService()
 
     def create_soap(self, medical_note: str) -> str:

@@ -81,3 +81,16 @@ button {
     font-weight: bold;
     margin-right: 8px;
 }
+
+.diagnosis-card {
+    background: #eef6ff;
+    border-left: 6px solid #2196F3;
+    padding: 15px;
+    margin-bottom: 15px;
+    border-radius: 8px;
+}
+
+.diagnosis-card h3 {
+    margin-top: 0;
+    color: #1565C0;
+}
