@@ -133,3 +133,31 @@ class SpeechServiceTests(SimpleTestCase):
         service.medical_dictionary.build_transcription_prompt.assert_called_once_with(
             "検査結果"
         )
+
+
+class SOAPConfirmationGuardTests(SimpleTestCase):
+    def test_confirmation_section_is_removed_when_missing_items_empty(self):
+        soap = (
+            "S：\n- 検査結果確認\n\n"
+            "O：\n- CK軽度高値\n\n"
+            "確認すべき点：\n- 褐色尿の有無"
+        )
+
+        result = SOAPService.remove_unsupported_confirmation_section(
+            soap,
+            {"missing_items": []},
+        )
+
+        self.assertNotIn("確認すべき点", result)
+        self.assertNotIn("褐色尿", result)
+        self.assertIn("CK軽度高値", result)
+
+    def test_confirmation_section_is_kept_when_missing_items_exist(self):
+        soap = "P：\n- 経過観察\n\n確認すべき点：\n- CK値"
+
+        result = SOAPService.remove_unsupported_confirmation_section(
+            soap,
+            {"missing_items": ["CK値"]},
+        )
+
+        self.assertEqual(result, soap)
