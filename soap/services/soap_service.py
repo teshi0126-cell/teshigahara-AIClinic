@@ -100,9 +100,6 @@ JSONにない情報は追加しないでください。
         """
         確認事項は診療支援チェックへ分離し、SOAP本文から削除する。
         """
-        if encounter.get("missing_items"):
-            return soap_text
-
         return re.split(
             r"\n\s*確認すべき点[：:]",
             soap_text,
