@@ -1,3 +1,5 @@
+import json
+
 from .openai_service import OpenAIService
 from .encounter_service import EncounterService
 from soap.prompts.soap_prompt import SOAP_SYSTEM_PROMPT
@@ -9,7 +11,23 @@ class SOAPService:
         self.encounter_service = EncounterService()
 
     def create_soap(self, medical_note: str) -> str:
-        encounter = self.encounter_service.create_encounter_json(medical_note)
+        encounter = self.encounter_service.create_encounter_json(
+            medical_note
+        )
+        return self.create_soap_from_encounter(encounter)
+
+    def create_soap_from_encounter(self, encounter: dict) -> str:
+        """
+        生成済みEncounter JSONからSOAPを作成する。
+
+        Encounterを再生成しないため、API呼び出しの重複と
+        出力間の不整合を防ぐ。
+        """
+        encounter_json = json.dumps(
+            encounter,
+            ensure_ascii=False,
+            indent=2,
+        )
 
         prompt = f"""
 {SOAP_SYSTEM_PROMPT}
@@ -19,6 +37,6 @@ class SOAPService:
 JSONにない情報は追加しないでください。
 
 【Encounter JSON】
-{encounter}
+{encounter_json}
 """
         return self.ai.generate_text(prompt)
