@@ -53,7 +53,7 @@ JSONにない情報は追加しないでください。
         encounter: dict,
     ) -> str:
         """
-        missing_itemsが空なら、AIが独自生成した確認事項を削除する。
+        確認事項は診療支援チェックへ分離し、SOAP本文から削除する。
         """
         if encounter.get("missing_items"):
             return soap_text
