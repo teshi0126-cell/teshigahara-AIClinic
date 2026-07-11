@@ -161,3 +161,35 @@ class SOAPConfirmationGuardTests(SimpleTestCase):
         )
 
         self.assertEqual(result, "P：\n- 経過観察")
+
+
+class SOAPPlanGuardTests(SimpleTestCase):
+    def test_plan_action_without_encounter_evidence_is_removed(self):
+        soap = (
+            "P：\n"
+            "- 薬を継続する。\n"
+            "- CK高値について経過観察。"
+        )
+        encounter = {
+            "plan": ["薬を継続する"],
+            "assessment": ["CKが少し高い"],
+        }
+
+        result = SOAPService.remove_unsupported_plan_actions(
+            soap,
+            encounter,
+        )
+
+        self.assertIn("薬を継続する", result)
+        self.assertNotIn("経過観察", result)
+
+    def test_plan_action_with_encounter_evidence_is_kept(self):
+        soap = "P：\n- 1か月後に再診。"
+        encounter = {"plan": ["1か月後に再診"]}
+
+        result = SOAPService.remove_unsupported_plan_actions(
+            soap,
+            encounter,
+        )
+
+        self.assertEqual(result, soap)
