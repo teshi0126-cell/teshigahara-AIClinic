@@ -1,26 +1,50 @@
 # Python
 __pycache__/
 *.py[cod]
-
-# Virtual Environment
 venv/
+.venv/
 
-# Environment
-.env
-
-# Database
+# Django
 db.sqlite3
+*.sqlite3
+media/
 
-# VS Code
-.vscode/
+# Secrets
+.env
+.env.*
+!.env.example
 
-# Logs
-logs/
-*.log
-
-# Audio
+# Audio and medical data
+*.wav
+*.m4a
+*.mp3
+*.webm
 recordings/
+uploads/
 
-# Windows
+# Windows / IDE
+.vscode/
+.idea/
 Thumbs.db
-Desktop.ini
+
+# Secrets and databases
+.env
+.env.*
+!.env.example
+db.sqlite3
+*.sqlite3
+
+# Medical data, recordings and logs
+*.wav
+*.m4a
+*.mp3
+*.webm
+soap/logs/
+recordings/
+uploads/
+
+# Python environment
+venv/
+.venv/
+__pycache__/
+*.py[cod]
