@@ -42,10 +42,55 @@ JSONにない情報は追加しないでください。
 """
         result = self.ai.generate_text(prompt)
 
-        return self.remove_unsupported_confirmation_section(
+        result = self.remove_unsupported_confirmation_section(
             result,
             encounter,
         )
+
+        return self.remove_unsupported_plan_actions(
+            result,
+            encounter,
+        )
+
+    @staticmethod
+    def remove_unsupported_plan_actions(
+        soap_text: str,
+        encounter: dict,
+    ) -> str:
+        """
+        原文由来のEncounterに存在しない医療行為をPから除外する。
+        """
+        encounter_text = json.dumps(
+            encounter,
+            ensure_ascii=False,
+        )
+
+        guarded_actions = (
+            "経過観察",
+            "再診",
+            "検査",
+            "紹介",
+            "処方",
+            "中止",
+            "増量",
+            "減量",
+        )
+
+        lines = []
+
+        for line in soap_text.splitlines():
+            stripped = line.strip()
+
+            unsupported = any(
+                action in stripped
+                and action not in encounter_text
+                for action in guarded_actions
+            )
+
+            if not unsupported:
+                lines.append(line)
+
+        return "\n".join(lines).rstrip()
 
     @staticmethod
     def remove_unsupported_confirmation_section(
