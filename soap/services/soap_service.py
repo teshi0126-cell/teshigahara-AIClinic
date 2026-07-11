@@ -1,4 +1,5 @@
 import json
+import re
 
 from .openai_service import OpenAIService
 from .encounter_service import EncounterService
@@ -39,4 +40,26 @@ JSONにない情報は追加しないでください。
 【Encounter JSON】
 {encounter_json}
 """
-        return self.ai.generate_text(prompt)
+        result = self.ai.generate_text(prompt)
+
+        return self.remove_unsupported_confirmation_section(
+            result,
+            encounter,
+        )
+
+    @staticmethod
+    def remove_unsupported_confirmation_section(
+        soap_text: str,
+        encounter: dict,
+    ) -> str:
+        """
+        missing_itemsが空なら、AIが独自生成した確認事項を削除する。
+        """
+        if encounter.get("missing_items"):
+            return soap_text
+
+        return re.split(
+            r"\n\s*確認すべき点[：:]",
+            soap_text,
+            maxsplit=1,
+        )[0].rstrip()
