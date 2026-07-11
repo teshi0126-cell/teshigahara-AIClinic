@@ -152,7 +152,7 @@ class SOAPConfirmationGuardTests(SimpleTestCase):
         self.assertNotIn("褐色尿", result)
         self.assertIn("CK軽度高値", result)
 
-    def test_confirmation_section_is_kept_when_missing_items_exist(self):
+    def test_confirmation_section_is_removed_when_missing_items_exist(self):
         soap = "P：\n- 経過観察\n\n確認すべき点：\n- CK値"
 
         result = SOAPService.remove_unsupported_confirmation_section(
@@ -160,4 +160,4 @@ class SOAPConfirmationGuardTests(SimpleTestCase):
             {"missing_items": ["CK値"]},
         )
 
-        self.assertEqual(result, soap)
+        self.assertEqual(result, "P：\n- 経過観察")
