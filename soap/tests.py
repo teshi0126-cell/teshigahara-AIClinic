@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -193,3 +194,53 @@ class SOAPPlanGuardTests(SimpleTestCase):
         )
 
         self.assertEqual(result, soap)
+
+
+class RecorderWorkflowTests(SimpleTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        recorder_path = (
+            Path(__file__).resolve().parent
+            / "static"
+            / "soap"
+            / "js"
+            / "recorder.js"
+        )
+        cls.source = recorder_path.read_text(encoding="utf-8")
+
+    def test_realtime_chunk_does_not_generate_soap(self):
+        realtime_section = self.source.split(
+            "async function handleRealtimeChunk",
+            1,
+        )[1].split(
+            "async function finalizeFullRecording",
+            1,
+        )[0]
+
+        self.assertNotIn("updateSOAP()", realtime_section)
+
+    def test_final_recording_generates_soap_once(self):
+        final_section = self.source.split(
+            "async function finalizeFullRecording",
+            1,
+        )[1].split(
+            "async function generateReferral",
+            1,
+        )[0]
+
+        self.assertEqual(
+            final_section.count("await updateSOAP()"),
+            1,
+        )
+        self.assertIn("await transcriptionQueue", final_section)
+
+    def test_transcription_receives_intake_and_final_flag(self):
+        self.assertIn(
+            'formData.append("intake_note", intakeNote.value)',
+            self.source,
+        )
+        self.assertIn(
+            'formData.append("is_final", isFinal ? "true" : "false")',
+            self.source,
+        )
