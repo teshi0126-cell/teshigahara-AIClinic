@@ -14,12 +14,13 @@ let audioContext;
 let audioSource;
 let audioProcessor;
 let inputGain;
+let voiceCompressor;
 let recordingDestination;
 let pcmBuffers = [];
 let pcmSampleCount = 0;
 
 const REALTIME_CHUNK_SECONDS = 10;
-const MICROPHONE_GAIN = 1.8;
+const MICROPHONE_GAIN = 2.5;
 
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
@@ -291,6 +292,15 @@ function startRealtimePcmCapture(mediaStream) {
     inputGain = audioContext.createGain();
     inputGain.gain.value = MICROPHONE_GAIN;
 
+    voiceCompressor = (
+        audioContext.createDynamicsCompressor()
+    );
+    voiceCompressor.threshold.value = -24;
+    voiceCompressor.knee.value = 20;
+    voiceCompressor.ratio.value = 6;
+    voiceCompressor.attack.value = 0.003;
+    voiceCompressor.release.value = 0.25;
+
     recordingDestination = (
         audioContext.createMediaStreamDestination()
     );
@@ -315,8 +325,9 @@ function startRealtimePcmCapture(mediaStream) {
     };
 
     audioSource.connect(inputGain);
-    inputGain.connect(audioProcessor);
-    inputGain.connect(recordingDestination);
+    inputGain.connect(voiceCompressor);
+    voiceCompressor.connect(audioProcessor);
+    voiceCompressor.connect(recordingDestination);
     audioProcessor.connect(audioContext.destination);
 
     return recordingDestination.stream;
@@ -328,6 +339,10 @@ async function stopRealtimePcmCapture() {
     if (audioProcessor) {
         audioProcessor.disconnect();
         audioProcessor.onaudioprocess = null;
+    }
+
+    if (voiceCompressor) {
+        voiceCompressor.disconnect();
     }
 
     if (inputGain) {
@@ -349,6 +364,7 @@ async function stopRealtimePcmCapture() {
     }
 
     audioProcessor = null;
+    voiceCompressor = null;
     inputGain = null;
     recordingDestination = null;
     audioSource = null;
@@ -493,9 +509,9 @@ startBtn.onclick = async function() {
 
     stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
             channelCount: 1
         }
     });
