@@ -5,7 +5,10 @@ let isRecording = false;
 let realtimeChunks = [];
 let fullAudioChunks = [];
 let conversationChunks = [];
-let transcriptionQueue = Promise.resolve();
+let activeTranscriptions = new Set();
+let pendingTranscripts = new Map();
+let nextChunkSequence = 0;
+let nextChunkToRender = 0;
 
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
@@ -178,17 +181,34 @@ async function updateSOAP() {
     }
 }
 
-async function handleRealtimeChunk(blob) {
-    const transcript = await transcribeBlob(
-        blob,
-        "chunk.webm",
-        false
-    );
+function flushRealtimeTranscripts() {
+    while (pendingTranscripts.has(nextChunkToRender)) {
+        const transcript = pendingTranscripts.get(nextChunkToRender);
+        pendingTranscripts.delete(nextChunkToRender);
+        nextChunkToRender += 1;
 
-    if (transcript) {
-        conversationChunks.push(transcript);
-        medicalNote.value += transcript + "\n";
+        if (transcript) {
+            conversationChunks.push(transcript);
+            medicalNote.value += transcript + "\n";
+        }
+    }
+}
+
+async function handleRealtimeChunk(blob, sequence) {
+    try {
+        const transcript = await transcribeBlob(
+            blob,
+            "chunk_" + sequence + ".webm",
+            false
+        );
+
+        pendingTranscripts.set(sequence, transcript);
+        flushRealtimeTranscripts();
         setSoapStatus("診察終了後に生成");
+    } catch (error) {
+        console.error(error);
+        pendingTranscripts.set(sequence, "");
+        flushRealtimeTranscripts();
     }
 
     if (isRecording) {
@@ -206,7 +226,7 @@ async function finalizeFullRecording() {
         type: "audio/webm;codecs=opus"
     });
 
-    await transcriptionQueue;
+    await Promise.all(Array.from(activeTranscriptions));
 
     const finalTranscript = await transcribeBlob(
         fullBlob,
@@ -283,7 +303,10 @@ startBtn.onclick = async function() {
     realtimeChunks = [];
     fullAudioChunks = [];
     conversationChunks = [];
-    transcriptionQueue = Promise.resolve();
+    activeTranscriptions = new Set();
+    pendingTranscripts = new Map();
+    nextChunkSequence = 0;
+    nextChunkToRender = 0;
 
     medicalNote.value = "";
     soapResult.value = "";
@@ -305,14 +328,21 @@ startBtn.onclick = async function() {
 
             if (isRecording) {
                 const chunk = event.data;
+                const sequence = nextChunkSequence;
+                nextChunkSequence += 1;
 
-                transcriptionQueue = transcriptionQueue
-                    .then(() => handleRealtimeChunk(chunk))
-                    .catch(error => {
-                        console.error(error);
-                        statusText.innerText = "文字起こしエラー";
-                        setSoapStatus("確認待ち");
-                    });
+                statusText.innerText = "文字起こし中...";
+
+                const task = handleRealtimeChunk(
+                    chunk,
+                    sequence
+                );
+
+                activeTranscriptions.add(task);
+
+                task.finally(() => {
+                    activeTranscriptions.delete(task);
+                });
             }
         }
     };
