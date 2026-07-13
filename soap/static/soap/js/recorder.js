@@ -241,10 +241,6 @@ function startAudioLevelMonitor(mediaStream) {
         ? audioTrack.label || "選択中のマイク"
         : "マイクを確認できません";
 
-    analyserNode = audioContext.createAnalyser();
-    analyserNode.fftSize = 2048;
-    analyserNode.smoothingTimeConstant = 0.75;
-
     updateAudioLevel();
 }
 
