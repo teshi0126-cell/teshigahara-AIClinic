@@ -266,6 +266,14 @@ class RecorderWorkflowTests(SimpleTestCase):
             self.source,
         )
         self.assertNotIn("cumulativeBlob", self.source)
+        self.assertIn(
+            "conversationChunks.push(transcript)",
+            self.source,
+        )
+        self.assertIn(
+            "medicalNote.value += transcript",
+            self.source,
+        )
 
     def test_final_webm_and_realtime_wav_are_separate(self):
         self.assertIn(
