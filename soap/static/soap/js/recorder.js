@@ -188,8 +188,8 @@ function flushRealtimeTranscripts() {
         nextChunkToRender += 1;
 
         if (transcript) {
-            conversationChunks.push(transcript);
-            medicalNote.value += transcript + "\n";
+            conversationChunks = [transcript];
+            medicalNote.value = transcript + "\n";
         }
     }
 }
@@ -327,14 +327,17 @@ startBtn.onclick = async function() {
             fullAudioChunks.push(event.data);
 
             if (isRecording) {
-                const chunk = event.data;
+                const cumulativeBlob = new Blob(
+                    fullAudioChunks,
+                    { type: "audio/webm;codecs=opus" }
+                );
                 const sequence = nextChunkSequence;
                 nextChunkSequence += 1;
 
                 statusText.innerText = "文字起こし中...";
 
                 const task = handleRealtimeChunk(
-                    chunk,
+                    cumulativeBlob,
                     sequence
                 );
 
