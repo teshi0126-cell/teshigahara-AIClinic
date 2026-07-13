@@ -233,7 +233,10 @@ class RecorderWorkflowTests(SimpleTestCase):
             final_section.count("await updateSOAP()"),
             1,
         )
-        self.assertIn(\n            "await Promise.all(Array.from(activeTranscriptions))",\n            final_section,\n        )
+        self.assertIn(
+            "await Promise.all(Array.from(activeTranscriptions))",
+            final_section,
+        )
 
     def test_realtime_transcriptions_are_rendered_in_order(self):
         self.assertIn(
