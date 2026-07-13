@@ -291,7 +291,7 @@ class RecorderWorkflowTests(SimpleTestCase):
 
     def test_quiet_audio_is_amplified_for_all_recordings(self):
         self.assertIn(
-            "const MICROPHONE_GAIN = 1.8",
+            "const MICROPHONE_GAIN = 2.5",
             self.source,
         )
         self.assertIn(
@@ -299,11 +299,23 @@ class RecorderWorkflowTests(SimpleTestCase):
             self.source,
         )
         self.assertIn(
+            "createDynamicsCompressor()",
+            self.source,
+        )
+        self.assertIn(
+            "voiceCompressor.connect(recordingDestination)",
+            self.source,
+        )
+        self.assertIn(
+            "noiseSuppression: false",
+            self.source,
+        )
+        self.assertIn(
             "new MediaRecorder(amplifiedStream",
             self.source,
         )
         self.assertIn(
-            "autoGainControl: true",
+            "autoGainControl: false",
             self.source,
         )
 
