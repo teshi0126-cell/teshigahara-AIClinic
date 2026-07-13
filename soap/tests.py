@@ -252,6 +252,20 @@ class RecorderWorkflowTests(SimpleTestCase):
             self.source,
         )
 
+    def test_realtime_uses_cumulative_webm(self):
+        self.assertIn(
+            "const cumulativeBlob = new Blob(",
+            self.source,
+        )
+        self.assertIn(
+            "medicalNote.value = transcript",
+            self.source,
+        )
+        self.assertNotIn(
+            'medicalNote.value += transcript',
+            self.source,
+        )
+
     def test_transcription_receives_intake_and_final_flag(self):
         self.assertIn(
             'formData.append("intake_note", intakeNote.value)',
