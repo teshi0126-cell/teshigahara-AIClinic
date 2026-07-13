@@ -10,6 +10,14 @@ let pendingTranscripts = new Map();
 let nextChunkSequence = 0;
 let nextChunkToRender = 0;
 
+let audioContext;
+let audioSource;
+let audioProcessor;
+let pcmBuffers = [];
+let pcmSampleCount = 0;
+
+const REALTIME_CHUNK_SECONDS = 10;
+
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
 const statusText = document.getElementById("status");
@@ -181,6 +189,146 @@ async function updateSOAP() {
     }
 }
 
+function encodeWav(samples, sampleRate) {
+    const buffer = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buffer);
+
+    function writeText(offset, text) {
+        for (let i = 0; i < text.length; i += 1) {
+            view.setUint8(offset + i, text.charCodeAt(i));
+        }
+    }
+
+    writeText(0, "RIFF");
+    view.setUint32(4, 36 + samples.length * 2, true);
+    writeText(8, "WAVE");
+    writeText(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeText(36, "data");
+    view.setUint32(40, samples.length * 2, true);
+
+    let offset = 44;
+
+    for (const sample of samples) {
+        const clamped = Math.max(-1, Math.min(1, sample));
+        const value = clamped < 0
+            ? clamped * 0x8000
+            : clamped * 0x7fff;
+
+        view.setInt16(offset, value, true);
+        offset += 2;
+    }
+
+    return new Blob([buffer], { type: "audio/wav" });
+}
+
+function mergePcmBuffers(buffers, totalLength) {
+    const merged = new Float32Array(totalLength);
+    let offset = 0;
+
+    for (const buffer of buffers) {
+        merged.set(buffer, offset);
+        offset += buffer.length;
+    }
+
+    return merged;
+}
+
+function queueRealtimePcmChunk(force = false) {
+    if (!audioContext || pcmSampleCount === 0) return;
+
+    const minimumSamples = force
+        ? Math.floor(audioContext.sampleRate)
+        : Math.floor(
+            audioContext.sampleRate * REALTIME_CHUNK_SECONDS
+        );
+
+    if (pcmSampleCount < minimumSamples) return;
+
+    const samples = mergePcmBuffers(
+        pcmBuffers,
+        pcmSampleCount
+    );
+
+    pcmBuffers = [];
+    pcmSampleCount = 0;
+
+    const wavBlob = encodeWav(
+        samples,
+        audioContext.sampleRate
+    );
+    const sequence = nextChunkSequence;
+    nextChunkSequence += 1;
+
+    statusText.innerText = "文字起こし中...";
+
+    const task = handleRealtimeChunk(
+        wavBlob,
+        sequence
+    );
+
+    activeTranscriptions.add(task);
+
+    task.finally(() => {
+        activeTranscriptions.delete(task);
+    });
+}
+
+function startRealtimePcmCapture(mediaStream) {
+    audioContext = new AudioContext();
+    audioSource = audioContext.createMediaStreamSource(
+        mediaStream
+    );
+    audioProcessor = audioContext.createScriptProcessor(
+        4096,
+        1,
+        1
+    );
+
+    audioProcessor.onaudioprocess = event => {
+        if (!isRecording) return;
+
+        const samples = new Float32Array(
+            event.inputBuffer.getChannelData(0)
+        );
+
+        pcmBuffers.push(samples);
+        pcmSampleCount += samples.length;
+
+        queueRealtimePcmChunk(false);
+    };
+
+    audioSource.connect(audioProcessor);
+    audioProcessor.connect(audioContext.destination);
+}
+
+async function stopRealtimePcmCapture() {
+    queueRealtimePcmChunk(true);
+
+    if (audioProcessor) {
+        audioProcessor.disconnect();
+        audioProcessor.onaudioprocess = null;
+    }
+
+    if (audioSource) {
+        audioSource.disconnect();
+    }
+
+    if (audioContext) {
+        await audioContext.close();
+    }
+
+    audioProcessor = null;
+    audioSource = null;
+    audioContext = null;
+}
+
 function flushRealtimeTranscripts() {
     while (pendingTranscripts.has(nextChunkToRender)) {
         const transcript = pendingTranscripts.get(nextChunkToRender);
@@ -198,7 +346,7 @@ async function handleRealtimeChunk(blob, sequence) {
     try {
         const transcript = await transcribeBlob(
             blob,
-            "chunk_" + sequence + ".webm",
+            "chunk_" + sequence + ".wav",
             false
         );
 
@@ -226,6 +374,7 @@ async function finalizeFullRecording() {
         type: "audio/webm;codecs=opus"
     });
 
+    await stopRealtimePcmCapture();
     await Promise.all(Array.from(activeTranscriptions));
 
     const finalTranscript = await transcribeBlob(
@@ -307,6 +456,8 @@ startBtn.onclick = async function() {
     pendingTranscripts = new Map();
     nextChunkSequence = 0;
     nextChunkToRender = 0;
+    pcmBuffers = [];
+    pcmSampleCount = 0;
 
     medicalNote.value = "";
     soapResult.value = "";
@@ -317,36 +468,15 @@ startBtn.onclick = async function() {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
     isRecording = true;
+    startRealtimePcmCapture(stream);
 
     mediaRecorder = new MediaRecorder(stream, {
         mimeType: "audio/webm;codecs=opus"
     });
 
-    mediaRecorder.ondataavailable = async function(event) {
+    mediaRecorder.ondataavailable = function(event) {
         if (event.data && event.data.size > 0) {
             fullAudioChunks.push(event.data);
-
-            if (isRecording) {
-                const cumulativeBlob = new Blob(
-                    fullAudioChunks,
-                    { type: "audio/webm;codecs=opus" }
-                );
-                const sequence = nextChunkSequence;
-                nextChunkSequence += 1;
-
-                statusText.innerText = "文字起こし中...";
-
-                const task = handleRealtimeChunk(
-                    cumulativeBlob,
-                    sequence
-                );
-
-                activeTranscriptions.add(task);
-
-                task.finally(() => {
-                    activeTranscriptions.delete(task);
-                });
-            }
         }
     };
 
