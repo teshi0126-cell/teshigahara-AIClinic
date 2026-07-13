@@ -40,7 +40,7 @@ const encounterJson = document.getElementById("encounter_json");
 const clinicalChecks = document.getElementById("clinical_checks");
 const diagnosisList = document.getElementById("diagnosis_list");
 const microphoneDevice = document.getElementById("microphoneDevice");
-const audioLevelBar = document.getElementById("audioLevelBar");
+const audioLevelMeter = document.getElementById("audioLevelMeter");
 const audioLevelText = document.getElementById("audioLevelText");
 
 function syncIntakeBeforeSubmit() {
@@ -219,7 +219,7 @@ function updateAudioLevel() {
     const clampedDb = Math.max(-60, Math.min(0, decibels));
     const percentage = ((clampedDb + 60) / 60) * 100;
 
-    audioLevelBar.style.width = percentage + "%";
+    audioLevelMeter.value = percentage;
 
     if (clampedDb < -42) {
         audioLevelText.innerText = "小さい";
@@ -250,7 +250,7 @@ function stopAudioLevelMonitor() {
     }
 
     audioLevelFrame = null;
-    audioLevelBar.style.width = "0";
+    audioLevelMeter.value = 0;
     audioLevelText.innerText = "停止";
 }
 
