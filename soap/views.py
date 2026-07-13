@@ -1,4 +1,5 @@
 import json
+import logging
 
 from django.http import JsonResponse
 from django.shortcuts import render
@@ -13,6 +14,8 @@ from .services.reasoning.engine import ClinicalReasoningEngine
 from .services.referral_service import ReferralService
 from .services.conversation_service import ConversationService
 from .services.visit_analyzer_service import VisitAnalyzerService
+
+logger = logging.getLogger(__name__)
 
 
 def build_medical_note(
@@ -376,6 +379,7 @@ def transcribe_chunk(request):
         )
 
     except Exception as exc:
+        logger.exception("Audio transcription failed")
         return JsonResponse(
             {"error": str(exc)},
             status=500,
