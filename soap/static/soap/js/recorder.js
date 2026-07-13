@@ -123,7 +123,10 @@ async function transcribeBlob(blob, filename, isFinal = false) {
     const data = await response.json();
 
     if (data.error) {
-        statusText.innerText = "文字起こしエラー";
+        console.error("文字起こしエラー", data.error);
+        statusText.innerText = (
+            "文字起こしエラー：" + data.error
+        );
         setSoapStatus("エラー");
         return "";
     }
