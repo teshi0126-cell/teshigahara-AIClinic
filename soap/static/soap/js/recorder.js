@@ -336,8 +336,8 @@ function flushRealtimeTranscripts() {
         nextChunkToRender += 1;
 
         if (transcript) {
-            conversationChunks = [transcript];
-            medicalNote.value = transcript + "\n";
+            conversationChunks.push(transcript);
+            medicalNote.value += transcript + "\n";
         }
     }
 }
