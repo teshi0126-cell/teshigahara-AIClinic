@@ -325,6 +325,14 @@ class RecorderWorkflowTests(SimpleTestCase):
             self.source,
         )
         self.assertIn(
+            'document.getElementById("audioLevelMeter")',
+            self.source,
+        )
+        self.assertIn(
+            "audioLevelMeter.value = percentage",
+            self.source,
+        )
+        self.assertIn(
             "audioTrack.label",
             self.source,
         )
