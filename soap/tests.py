@@ -319,6 +319,24 @@ class RecorderWorkflowTests(SimpleTestCase):
             self.source,
         )
 
+    def test_microphone_device_and_level_are_visible(self):
+        self.assertIn(
+            'document.getElementById("microphoneDevice")',
+            self.source,
+        )
+        self.assertIn(
+            "audioTrack.label",
+            self.source,
+        )
+        self.assertIn(
+            "analyserNode.getFloatTimeDomainData(samples)",
+            self.source,
+        )
+        self.assertIn(
+            'audioLevelText.innerText = "小さい"',
+            self.source,
+        )
+
     def test_transcription_receives_intake_and_final_flag(self):
         self.assertIn(
             'formData.append("intake_note", intakeNote.value)',
