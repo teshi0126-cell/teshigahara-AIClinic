@@ -123,7 +123,7 @@ class SpeechServiceTests(SimpleTestCase):
         result = service.transcribe_audio(
             audio_file=audio,
             intake_note="検査結果",
-            is_final=True,
+            is_final=False,
         )
 
         self.assertEqual(result, "DigiKar")
@@ -133,6 +133,67 @@ class SpeechServiceTests(SimpleTestCase):
         self.assertEqual(kwargs["prompt"], "脂質異常症、CK")
         service.medical_dictionary.build_transcription_prompt.assert_called_once_with(
             "検査結果"
+        )
+
+
+    @patch("soap.services.speech_service.client")
+    def test_final_transcription_uses_speaker_diarization(
+        self,
+        mock_client,
+    ):
+        mock_client.audio.transcriptions.create.return_value = (
+            SimpleNamespace(
+                segments=[
+                    SimpleNamespace(
+                        speaker="speaker_0",
+                        text="今日はどうされましたか。",
+                    ),
+                    SimpleNamespace(
+                        speaker="speaker_1",
+                        text="頭が痛いです。",
+                    ),
+                ]
+            )
+        )
+
+        service = SpeechService.__new__(SpeechService)
+        service.medical_dictionary = Mock()
+        service.medical_dictionary.correct.side_effect = (
+            lambda text: text
+        )
+
+        audio = SimpleUploadedFile(
+            "final.webm",
+            b"audio",
+            content_type="audio/webm",
+        )
+
+        result = service.transcribe_audio(
+            audio_file=audio,
+            intake_note="頭痛",
+            is_final=True,
+        )
+
+        kwargs = (
+            mock_client.audio.transcriptions.create.call_args.kwargs
+        )
+        self.assertEqual(
+            kwargs["model"],
+            "gpt-4o-transcribe-diarize",
+        )
+        self.assertEqual(
+            kwargs["response_format"],
+            "diarized_json",
+        )
+        self.assertEqual(
+            kwargs["chunking_strategy"],
+            "auto",
+        )
+        self.assertNotIn("prompt", kwargs)
+        self.assertEqual(
+            result,
+            "話者A：今日はどうされましたか。\n"
+            "話者B：頭が痛いです。",
         )
 
 
