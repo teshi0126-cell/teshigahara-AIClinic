@@ -303,7 +303,7 @@ class RecorderWorkflowTests(SimpleTestCase):
             self.source,
         )
         self.assertIn(
-            "voiceCompressor.connect(recordingDestination)",
+            "analyserNode.connect(recordingDestination)",
             self.source,
         )
         self.assertIn(
