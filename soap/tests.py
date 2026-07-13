@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -193,3 +194,84 @@ class SOAPPlanGuardTests(SimpleTestCase):
         )
 
         self.assertEqual(result, soap)
+
+
+class RecorderWorkflowTests(SimpleTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        recorder_path = (
+            Path(__file__).resolve().parent
+            / "static"
+            / "soap"
+            / "js"
+            / "recorder.js"
+        )
+        cls.source = recorder_path.read_text(encoding="utf-8")
+
+    def test_realtime_chunk_does_not_generate_soap(self):
+        realtime_section = self.source.split(
+            "async function handleRealtimeChunk",
+            1,
+        )[1].split(
+            "async function finalizeFullRecording",
+            1,
+        )[0]
+
+        self.assertNotIn("updateSOAP()", realtime_section)
+
+    def test_final_recording_generates_soap_once(self):
+        final_section = self.source.split(
+            "async function finalizeFullRecording",
+            1,
+        )[1].split(
+            "async function generateReferral",
+            1,
+        )[0]
+
+        self.assertEqual(
+            final_section.count("await updateSOAP()"),
+            1,
+        )
+        self.assertIn(
+            "await Promise.all(Array.from(activeTranscriptions))",
+            final_section,
+        )
+
+    def test_realtime_transcriptions_are_rendered_in_order(self):
+        self.assertIn(
+            "pendingTranscripts.set(sequence, transcript)",
+            self.source,
+        )
+        self.assertIn(
+            "flushRealtimeTranscripts()",
+            self.source,
+        )
+        self.assertIn(
+            "activeTranscriptions.add(task)",
+            self.source,
+        )
+
+    def test_realtime_uses_cumulative_webm(self):
+        self.assertIn(
+            "const cumulativeBlob = new Blob(",
+            self.source,
+        )
+        self.assertIn(
+            "medicalNote.value = transcript",
+            self.source,
+        )
+        self.assertNotIn(
+            'medicalNote.value += transcript',
+            self.source,
+        )
+
+    def test_transcription_receives_intake_and_final_flag(self):
+        self.assertIn(
+            'formData.append("intake_note", intakeNote.value)',
+            self.source,
+        )
+        self.assertIn(
+            'formData.append("is_final", isFinal ? "true" : "false")',
+            self.source,
+        )

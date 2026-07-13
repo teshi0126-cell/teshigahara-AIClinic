@@ -5,6 +5,10 @@ let isRecording = false;
 let realtimeChunks = [];
 let fullAudioChunks = [];
 let conversationChunks = [];
+let activeTranscriptions = new Set();
+let pendingTranscripts = new Map();
+let nextChunkSequence = 0;
+let nextChunkToRender = 0;
 
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
@@ -83,11 +87,13 @@ function renderDiagnoses(diagnoses) {
     });
 }
 
-async function transcribeBlob(blob, filename) {
+async function transcribeBlob(blob, filename, isFinal = false) {
     if (!blob || blob.size < 500) return "";
 
     const formData = new FormData();
     formData.append("audio_file", blob, filename);
+    formData.append("intake_note", intakeNote.value);
+    formData.append("is_final", isFinal ? "true" : "false");
 
     const response = await fetch("/transcribe_chunk/", {
         method: "POST",
@@ -175,21 +181,38 @@ async function updateSOAP() {
     }
 }
 
-async function handleRealtimeChunk(blob) {
-    const transcript = await transcribeBlob(blob, "chunk.webm");
+function flushRealtimeTranscripts() {
+    while (pendingTranscripts.has(nextChunkToRender)) {
+        const transcript = pendingTranscripts.get(nextChunkToRender);
+        pendingTranscripts.delete(nextChunkToRender);
+        nextChunkToRender += 1;
 
-    if (transcript) {
-        conversationChunks.push(transcript);
-        medicalNote.value += transcript + "\n";
-
-        statusText.innerText = "SOAP更新中...";
-        setSoapStatus("更新中");
-
-        await updateSOAP();
-
-        if (isRecording) {
-            statusText.innerText = "録音中...";
+        if (transcript) {
+            conversationChunks = [transcript];
+            medicalNote.value = transcript + "\n";
         }
+    }
+}
+
+async function handleRealtimeChunk(blob, sequence) {
+    try {
+        const transcript = await transcribeBlob(
+            blob,
+            "chunk_" + sequence + ".webm",
+            false
+        );
+
+        pendingTranscripts.set(sequence, transcript);
+        flushRealtimeTranscripts();
+        setSoapStatus("診察終了後に生成");
+    } catch (error) {
+        console.error(error);
+        pendingTranscripts.set(sequence, "");
+        flushRealtimeTranscripts();
+    }
+
+    if (isRecording) {
+        statusText.innerText = "録音中...";
     }
 }
 
@@ -203,7 +226,13 @@ async function finalizeFullRecording() {
         type: "audio/webm;codecs=opus"
     });
 
-    const finalTranscript = await transcribeBlob(fullBlob, "full_recording.webm");
+    await Promise.all(Array.from(activeTranscriptions));
+
+    const finalTranscript = await transcribeBlob(
+        fullBlob,
+        "full_recording.webm",
+        true
+    );
 
     if (finalTranscript) {
         medicalNote.value = finalTranscript + "\n";
@@ -274,12 +303,16 @@ startBtn.onclick = async function() {
     realtimeChunks = [];
     fullAudioChunks = [];
     conversationChunks = [];
+    activeTranscriptions = new Set();
+    pendingTranscripts = new Map();
+    nextChunkSequence = 0;
+    nextChunkToRender = 0;
 
     medicalNote.value = "";
     soapResult.value = "";
     encounterJson.value = "";
 
-    setSoapStatus("録音中");
+    setSoapStatus("診察終了後に生成");
 
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
@@ -294,12 +327,25 @@ startBtn.onclick = async function() {
             fullAudioChunks.push(event.data);
 
             if (isRecording) {
-                statusText.innerText = "文字起こし中...";
-                await handleRealtimeChunk(event.data);
+                const cumulativeBlob = new Blob(
+                    fullAudioChunks,
+                    { type: "audio/webm;codecs=opus" }
+                );
+                const sequence = nextChunkSequence;
+                nextChunkSequence += 1;
 
-                if (isRecording) {
-                    statusText.innerText = "録音中...";
-                }
+                statusText.innerText = "文字起こし中...";
+
+                const task = handleRealtimeChunk(
+                    cumulativeBlob,
+                    sequence
+                );
+
+                activeTranscriptions.add(task);
+
+                task.finally(() => {
+                    activeTranscriptions.delete(task);
+                });
             }
         }
     };
