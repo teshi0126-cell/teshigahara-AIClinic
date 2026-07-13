@@ -13,10 +13,13 @@ let nextChunkToRender = 0;
 let audioContext;
 let audioSource;
 let audioProcessor;
+let inputGain;
+let recordingDestination;
 let pcmBuffers = [];
 let pcmSampleCount = 0;
 
 const REALTIME_CHUNK_SECONDS = 10;
+const MICROPHONE_GAIN = 1.8;
 
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
@@ -285,6 +288,13 @@ function startRealtimePcmCapture(mediaStream) {
     audioSource = audioContext.createMediaStreamSource(
         mediaStream
     );
+    inputGain = audioContext.createGain();
+    inputGain.gain.value = MICROPHONE_GAIN;
+
+    recordingDestination = (
+        audioContext.createMediaStreamDestination()
+    );
+
     audioProcessor = audioContext.createScriptProcessor(
         4096,
         1,
@@ -304,8 +314,12 @@ function startRealtimePcmCapture(mediaStream) {
         queueRealtimePcmChunk(false);
     };
 
-    audioSource.connect(audioProcessor);
+    audioSource.connect(inputGain);
+    inputGain.connect(audioProcessor);
+    inputGain.connect(recordingDestination);
     audioProcessor.connect(audioContext.destination);
+
+    return recordingDestination.stream;
 }
 
 async function stopRealtimePcmCapture() {
@@ -316,8 +330,18 @@ async function stopRealtimePcmCapture() {
         audioProcessor.onaudioprocess = null;
     }
 
+    if (inputGain) {
+        inputGain.disconnect();
+    }
+
     if (audioSource) {
         audioSource.disconnect();
+    }
+
+    if (recordingDestination) {
+        recordingDestination.stream
+            .getTracks()
+            .forEach(track => track.stop());
     }
 
     if (audioContext) {
@@ -325,6 +349,8 @@ async function stopRealtimePcmCapture() {
     }
 
     audioProcessor = null;
+    inputGain = null;
+    recordingDestination = null;
     audioSource = null;
     audioContext = null;
 }
@@ -465,12 +491,22 @@ startBtn.onclick = async function() {
 
     setSoapStatus("診察終了後に生成");
 
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            channelCount: 1
+        }
+    });
 
     isRecording = true;
-    startRealtimePcmCapture(stream);
 
-    mediaRecorder = new MediaRecorder(stream, {
+    const amplifiedStream = startRealtimePcmCapture(
+        stream
+    );
+
+    mediaRecorder = new MediaRecorder(amplifiedStream, {
         mimeType: "audio/webm;codecs=opus"
     });
 
