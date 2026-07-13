@@ -33,9 +33,15 @@
             </div>
             <div class="audio-level-row">
                 <span>入力レベル</span>
-                <div class="audio-level-track">
-                    <div id="audioLevelBar" class="audio-level-bar"></div>
-                </div>
+                <meter
+                    id="audioLevelMeter"
+                    min="0"
+                    max="100"
+                    low="20"
+                    high="92"
+                    optimum="60"
+                    value="0"
+                ></meter>
                 <span id="audioLevelText">待機中</span>
             </div>
             <p class="hint">
