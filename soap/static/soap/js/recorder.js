@@ -16,6 +16,8 @@ let audioProcessor;
 let inputGain;
 let voiceCompressor;
 let recordingDestination;
+let analyserNode;
+let audioLevelFrame;
 let pcmBuffers = [];
 let pcmSampleCount = 0;
 
@@ -37,6 +39,9 @@ const encounterJson = document.getElementById("encounter_json");
 
 const clinicalChecks = document.getElementById("clinical_checks");
 const diagnosisList = document.getElementById("diagnosis_list");
+const microphoneDevice = document.getElementById("microphoneDevice");
+const audioLevelBar = document.getElementById("audioLevelBar");
+const audioLevelText = document.getElementById("audioLevelText");
 
 function syncIntakeBeforeSubmit() {
     intakeNoteHidden.value = intakeNote.value;
@@ -193,6 +198,66 @@ async function updateSOAP() {
     }
 }
 
+function updateAudioLevel() {
+    if (!analyserNode || !isRecording) return;
+
+    const samples = new Float32Array(
+        analyserNode.fftSize
+    );
+    analyserNode.getFloatTimeDomainData(samples);
+
+    let sumSquares = 0;
+
+    for (const sample of samples) {
+        sumSquares += sample * sample;
+    }
+
+    const rms = Math.sqrt(sumSquares / samples.length);
+    const decibels = rms > 0
+        ? 20 * Math.log10(rms)
+        : -60;
+    const clampedDb = Math.max(-60, Math.min(0, decibels));
+    const percentage = ((clampedDb + 60) / 60) * 100;
+
+    audioLevelBar.style.width = percentage + "%";
+
+    if (clampedDb < -42) {
+        audioLevelText.innerText = "小さい";
+    } else if (clampedDb > -8) {
+        audioLevelText.innerText = "大きすぎ";
+    } else {
+        audioLevelText.innerText = "適正";
+    }
+
+    audioLevelFrame = requestAnimationFrame(
+        updateAudioLevel
+    );
+}
+
+function startAudioLevelMonitor(mediaStream) {
+    const audioTrack = mediaStream.getAudioTracks()[0];
+
+    microphoneDevice.innerText = audioTrack
+        ? audioTrack.label || "選択中のマイク"
+        : "マイクを確認できません";
+
+    analyserNode = audioContext.createAnalyser();
+    analyserNode.fftSize = 2048;
+    analyserNode.smoothingTimeConstant = 0.75;
+
+    updateAudioLevel();
+}
+
+function stopAudioLevelMonitor() {
+    if (audioLevelFrame) {
+        cancelAnimationFrame(audioLevelFrame);
+    }
+
+    audioLevelFrame = null;
+    audioLevelBar.style.width = "0";
+    audioLevelText.innerText = "停止";
+}
+
 function encodeWav(samples, sampleRate) {
     const buffer = new ArrayBuffer(44 + samples.length * 2);
     const view = new DataView(buffer);
@@ -326,19 +391,31 @@ function startRealtimePcmCapture(mediaStream) {
 
     audioSource.connect(inputGain);
     inputGain.connect(voiceCompressor);
-    voiceCompressor.connect(audioProcessor);
-    voiceCompressor.connect(recordingDestination);
+
+    analyserNode = audioContext.createAnalyser();
+    analyserNode.fftSize = 2048;
+    analyserNode.smoothingTimeConstant = 0.75;
+
+    voiceCompressor.connect(analyserNode);
+    analyserNode.connect(audioProcessor);
+    analyserNode.connect(recordingDestination);
     audioProcessor.connect(audioContext.destination);
+    startAudioLevelMonitor(mediaStream);
 
     return recordingDestination.stream;
 }
 
 async function stopRealtimePcmCapture() {
     queueRealtimePcmChunk(true);
+    stopAudioLevelMonitor();
 
     if (audioProcessor) {
         audioProcessor.disconnect();
         audioProcessor.onaudioprocess = null;
+    }
+
+    if (analyserNode) {
+        analyserNode.disconnect();
     }
 
     if (voiceCompressor) {
@@ -364,6 +441,7 @@ async function stopRealtimePcmCapture() {
     }
 
     audioProcessor = null;
+    analyserNode = null;
     voiceCompressor = null;
     inputGain = null;
     recordingDestination = null;
