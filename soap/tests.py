@@ -252,17 +252,32 @@ class RecorderWorkflowTests(SimpleTestCase):
             self.source,
         )
 
-    def test_realtime_uses_cumulative_webm(self):
+    def test_realtime_uses_standalone_wav_chunks(self):
         self.assertIn(
-            "const cumulativeBlob = new Blob(",
+            "function encodeWav(samples, sampleRate)",
             self.source,
         )
         self.assertIn(
-            "medicalNote.value = transcript",
+            "REALTIME_CHUNK_SECONDS = 10",
             self.source,
         )
-        self.assertNotIn(
-            'medicalNote.value += transcript',
+        self.assertIn(
+            '"chunk_" + sequence + ".wav"',
+            self.source,
+        )
+        self.assertNotIn("cumulativeBlob", self.source)
+
+    def test_final_webm_and_realtime_wav_are_separate(self):
+        self.assertIn(
+            'type: "audio/webm;codecs=opus"',
+            self.source,
+        )
+        self.assertIn(
+            'new Blob([buffer], { type: "audio/wav" })',
+            self.source,
+        )
+        self.assertIn(
+            "await stopRealtimePcmCapture()",
             self.source,
         )
 
