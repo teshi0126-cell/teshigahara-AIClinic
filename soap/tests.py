@@ -289,6 +289,24 @@ class RecorderWorkflowTests(SimpleTestCase):
             self.source,
         )
 
+    def test_quiet_audio_is_amplified_for_all_recordings(self):
+        self.assertIn(
+            "const MICROPHONE_GAIN = 1.8",
+            self.source,
+        )
+        self.assertIn(
+            "inputGain.gain.value = MICROPHONE_GAIN",
+            self.source,
+        )
+        self.assertIn(
+            "new MediaRecorder(amplifiedStream",
+            self.source,
+        )
+        self.assertIn(
+            "autoGainControl: true",
+            self.source,
+        )
+
     def test_transcription_receives_intake_and_final_flag(self):
         self.assertIn(
             'formData.append("intake_note", intakeNote.value)',
