@@ -425,6 +425,82 @@ class SOAPPlanGuardTests(SimpleTestCase):
         self.assertEqual(result, soap)
 
 
+class SOAPOutputCleanupTests(SimpleTestCase):
+    def test_inferred_exam_action_is_removed_from_plan(self):
+        soap = (
+            "S：\n- 体調は変わらない。\n\n"
+            "P：\n- 注射治療を継続する。\n"
+            "- 聴診を行う。"
+        )
+        encounter = {
+            "encounter": {
+                "raw_text": (
+                    "注射を続けていきましょう。"
+                    "ちょっと音を聞かせて。"
+                )
+            },
+            "plan": [
+                "注射治療を継続する",
+                "聴診を行う",
+            ],
+        }
+
+        result = SOAPService.remove_inferred_exam_actions(
+            soap,
+            encounter,
+        )
+
+        self.assertIn("注射治療を継続", result)
+        self.assertNotIn("聴診を行う", result)
+
+    def test_explicit_exam_plan_is_kept(self):
+        soap = "P：\n- 次回も聴診を行う。"
+        encounter = {
+            "encounter": {
+                "raw_text": "次回も聴診を行います。"
+            },
+            "plan": ["次回も聴診を行う"],
+        }
+
+        result = SOAPService.remove_inferred_exam_actions(
+            soap,
+            encounter,
+        )
+
+        self.assertEqual(result, soap)
+
+    def test_empty_bullets_are_removed(self):
+        soap = (
+            "S：\n- 体調は変わらない。\n\n"
+            "O：\n-\n\n"
+            "A：\n- 内服継続可能。"
+        )
+
+        result = SOAPService.remove_empty_bullets(
+            soap
+        )
+
+        self.assertIn("O：", result)
+        self.assertNotIn("O：\n-", result)
+        self.assertIn("内服継続可能", result)
+
+    def test_exact_duplicate_bullets_are_removed(self):
+        soap = (
+            "P：\n"
+            "- 注射治療を継続する。\n"
+            "- 注射治療を継続する"
+        )
+
+        result = SOAPService.remove_duplicate_bullets(
+            soap
+        )
+
+        self.assertEqual(
+            result.count("注射治療を継続する"),
+            1,
+        )
+
+
 class RecorderWorkflowTests(SimpleTestCase):
     @classmethod
     def setUpClass(cls):
