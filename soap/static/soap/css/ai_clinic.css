@@ -169,6 +169,52 @@ button:hover{
 
 }
 
+.secondary{
+    background:#64748b;
+    color:white;
+}
+
+.warning{
+    background:#d97706;
+    color:white;
+}
+
+.complete{
+    background:#0f766e;
+    color:white;
+}
+
+button:disabled{
+    cursor:not-allowed;
+    opacity:.5;
+    transform:none;
+}
+
+.recording-actions{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+}
+
+.recording-actions button{
+    margin-right:0;
+}
+
+.session-hint{
+    margin:12px 0 0;
+    color:#475569;
+    font-size:13px;
+    font-weight:bold;
+}
+
+.session-hint.error{
+    color:#b91c1c;
+}
+
+.session-hint.complete{
+    color:#047857;
+}
+
 /* =======================================================
    Status Badge
 ======================================================= */
