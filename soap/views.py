@@ -3,8 +3,6 @@ import logging
 
 from django.http import JsonResponse
 from django.shortcuts import render
-from django.views.decorators.csrf import csrf_exempt
-
 from .services.soap_service import SOAPService
 from .services.incremental_soap_service import IncrementalSOAPService
 from .services.encounter_service import EncounterService
@@ -17,6 +15,32 @@ from .services.visit_analyzer_service import VisitAnalyzerService
 from .services.clinical_record_validator import ClinicalRecordValidator
 
 logger = logging.getLogger(__name__)
+
+
+ERROR_MESSAGES = {
+    "TRANSCRIPTION_FAILED": (
+        "文字起こしに失敗しました。音声は画面内に保持されています。"
+        "再試行してください。"
+    ),
+    "SOAP_GENERATION_FAILED": (
+        "SOAP生成に失敗しました。文字起こしは保持されています。"
+        "再試行してください。"
+    ),
+    "REFERRAL_GENERATION_FAILED": (
+        "紹介状作成に失敗しました。しばらくして再試行してください。"
+    ),
+}
+
+
+def safe_error_response(error_code: str) -> JsonResponse:
+    """内部例外を画面へ露出せず、固定メッセージだけを返す。"""
+    return JsonResponse(
+        {
+            "error": ERROR_MESSAGES[error_code],
+            "error_code": error_code,
+        },
+        status=500,
+    )
 
 
 def build_medical_note(
@@ -333,7 +357,6 @@ def index(request):
     )
 
 
-@csrf_exempt
 def transcribe_chunk(request):
     if request.method != "POST":
         return JsonResponse(
@@ -390,15 +413,13 @@ def transcribe_chunk(request):
             }
         )
 
-    except Exception as exc:
+    except Exception:
         logger.exception("Audio transcription failed")
-        return JsonResponse(
-            {"error": str(exc)},
-            status=500,
+        return safe_error_response(
+            "TRANSCRIPTION_FAILED"
         )
 
 
-@csrf_exempt
 def generate_soap(request):
     if request.method != "POST":
         return JsonResponse(
@@ -455,14 +476,13 @@ def generate_soap(request):
             }
         )
 
-    except Exception as exc:
-        return JsonResponse(
-            {"error": str(exc)},
-            status=500,
+    except Exception:
+        logger.exception("SOAP generation failed")
+        return safe_error_response(
+            "SOAP_GENERATION_FAILED"
         )
 
 
-@csrf_exempt
 def generate_referral(request):
     if request.method != "POST":
         return JsonResponse(
@@ -532,8 +552,8 @@ def generate_referral(request):
             }
         )
 
-    except Exception as exc:
-        return JsonResponse(
-            {"error": str(exc)},
-            status=500,
+    except Exception:
+        logger.exception("Referral generation failed")
+        return safe_error_response(
+            "REFERRAL_GENERATION_FAILED"
         )
