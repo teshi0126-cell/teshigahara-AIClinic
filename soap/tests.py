@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import SimpleTestCase
+from django.test import Client, SimpleTestCase
 
 from .services.soap_service import SOAPService
 from .services.speech_service import SpeechService
@@ -1077,3 +1077,185 @@ class ClinicalRecordValidatorTests(SimpleTestCase):
 
         self.assertTrue(check["checked"])
 
+
+
+class SecurityAndPrivacyTests(SimpleTestCase):
+    def test_clinical_api_rejects_post_without_csrf_token(self):
+        client = Client(enforce_csrf_checks=True)
+
+        response = client.post(
+            "/transcribe_chunk/",
+            {},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_valid_csrf_token_reaches_clinical_api(self):
+        client = Client(enforce_csrf_checks=True)
+        client.get("/")
+        token = client.cookies["csrftoken"].value
+
+        response = client.post(
+            "/transcribe_chunk/",
+            {},
+            HTTP_X_CSRFTOKEN=token,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["error"],
+            "音声ファイルがありません",
+        )
+
+    @patch("soap.views.SpeechService")
+    def test_transcription_error_hides_internal_details(
+        self,
+        speech_service_class,
+    ):
+        speech_service_class.return_value.transcribe_audio.side_effect = (
+            RuntimeError("secret provider detail")
+        )
+        audio = SimpleUploadedFile(
+            "recording.wav",
+            b"not-real-audio",
+            content_type="audio/wav",
+        )
+
+        response = self.client.post(
+            "/transcribe_chunk/",
+            {
+                "audio_file": audio,
+                "is_final": "true",
+            },
+        )
+        payload = response.json()
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            payload["error_code"],
+            "TRANSCRIPTION_FAILED",
+        )
+        self.assertNotIn(
+            "secret provider detail",
+            payload["error"],
+        )
+
+    @patch(
+        "soap.views.analyze_visit",
+        side_effect=RuntimeError("secret prompt detail"),
+    )
+    def test_soap_error_hides_internal_details(
+        self,
+        _analyze_visit,
+    ):
+        response = self.client.post(
+            "/generate_soap/",
+            {"medical_note": "診察内容"},
+        )
+        payload = response.json()
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            payload["error_code"],
+            "SOAP_GENERATION_FAILED",
+        )
+        self.assertNotIn(
+            "secret prompt detail",
+            payload["error"],
+        )
+
+    @patch(
+        "soap.views.analyze_visit",
+        side_effect=RuntimeError("secret referral detail"),
+    )
+    def test_referral_error_hides_internal_details(
+        self,
+        _analyze_visit,
+    ):
+        response = self.client.post(
+            "/generate_referral/",
+            {"medical_note": "診察内容"},
+        )
+        payload = response.json()
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            payload["error_code"],
+            "REFERRAL_GENERATION_FAILED",
+        )
+        self.assertNotIn(
+            "secret referral detail",
+            payload["error"],
+        )
+
+    def test_recording_confirmation_is_required_and_reset(self):
+        soap_dir = Path(__file__).resolve().parent
+        template = (
+            soap_dir
+            / "templates"
+            / "soap"
+            / "index.html"
+        ).read_text(encoding="utf-8")
+        recorder = (
+            soap_dir
+            / "static"
+            / "soap"
+            / "js"
+            / "recorder.js"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            'id="recordingConsent"',
+            template,
+        )
+        self.assertIn(
+            "患者さんへの録音・AI処理の説明",
+            template,
+        )
+        self.assertIn(
+            "startBtn.disabled = !recordingConsent.checked",
+            recorder,
+        )
+        self.assertIn(
+            "recordingConsent.checked = false",
+            recorder,
+        )
+        self.assertIn(
+            "|| !recordingConsent.checked",
+            recorder,
+        )
+
+    def test_csrf_token_comes_from_rendered_form(self):
+        recorder = (
+            Path(__file__).resolve().parent
+            / "static"
+            / "soap"
+            / "js"
+            / "recorder.js"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            '"[name=csrfmiddlewaretoken]"',
+            recorder,
+        )
+        self.assertIn(
+            'headers: {\n            "X-CSRFToken": getCsrfToken()',
+            recorder,
+        )
+
+    def test_environment_example_contains_no_real_secret(self):
+        example = (
+            Path(__file__).resolve().parent.parent
+            / ".env.example"
+        ).read_text(encoding="utf-8")
+
+        for key in [
+            "OPENAI_API_KEY",
+            "DJANGO_SECRET_KEY",
+            "DJANGO_PRODUCTION",
+            "DJANGO_ALLOWED_HOSTS",
+            "DJANGO_HTTPS",
+        ]:
+            self.assertIn(key, example)
+
+        self.assertNotIn("sk-", example)
