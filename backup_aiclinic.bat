@@ -4,14 +4,14 @@ setlocal
 cd /d "%~dp0"
 
 if not exist "venv\Scripts\python.exe" (
-    echo エラー: venvが見つかりません。
+    echo ERROR: The Python virtual environment was not found.
     pause
     exit /b 1
 )
 
 "venv\Scripts\python.exe" "scripts\backup_database.py"
 if errorlevel 1 (
-    echo バックアップに失敗しました。
+    echo Database backup failed.
     pause
     exit /b 1
 )
