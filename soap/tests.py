@@ -646,7 +646,7 @@ class RecorderWorkflowTests(SimpleTestCase):
             "async function finalizeFullRecording",
             1,
         )[1].split(
-            "async function generateReferral",
+            "async function retryFinalProcessing",
             1,
         )[0]
 
