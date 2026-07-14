@@ -247,6 +247,60 @@ JSONにない情報は追加しないでください。
         return "\n".join(lines).rstrip()
 
     @staticmethod
+    def normalize_for_oa_comparison(
+        text: str,
+    ) -> str:
+        """
+        OとAの重複判定専用の保守的な正規化。
+
+        「高血圧症」という診断は変換せず、
+        今回の血圧が高いという観察表現だけを揃える。
+        """
+        normalized = (
+            (text or "")
+            .strip()
+            .lstrip("-・")
+            .strip()
+        )
+
+        normalized = re.sub(
+            r"^(医師|担当医)[はが、\s]*",
+            "",
+            normalized,
+        )
+
+        normalized = re.sub(
+            r"(と)?(述べている|述べた|"
+            r"説明している|説明した)$",
+            "",
+            normalized,
+        )
+
+        normalized = re.sub(
+            r"(本日|今日は|今日)",
+            "",
+            normalized,
+        )
+
+        normalized = re.sub(
+            r"(かなり|非常に|えらい)",
+            "",
+            normalized,
+        )
+
+        normalized = re.sub(
+            r"血圧[がは]?(?:だいぶ|とても)?高い",
+            "血圧高値",
+            normalized,
+        )
+
+        return re.sub(
+            r"[\s。．、，]",
+            "",
+            normalized,
+        )
+
+    @staticmethod
     def remove_objective_assessment_duplicates(
         soap_text: str,
     ) -> str:
@@ -276,10 +330,10 @@ JSONにない情報は追加しないでください。
                 current_section == "O"
                 and stripped.startswith(("-", "・"))
             ):
-                normalized = re.sub(
-                    r"[\s。．、，]",
-                    "",
-                    stripped.lstrip("-・").strip(),
+                normalized = (
+                    SOAPService.normalize_for_oa_comparison(
+                        stripped
+                    )
                 )
 
                 if normalized:
@@ -309,10 +363,10 @@ JSONにない情報は追加しないでください。
                 current_section == "A"
                 and stripped.startswith(("-", "・"))
             ):
-                normalized = re.sub(
-                    r"[\s。．、，]",
-                    "",
-                    stripped.lstrip("-・").strip(),
+                normalized = (
+                    SOAPService.normalize_for_oa_comparison(
+                        stripped
+                    )
                 )
                 duplicate = (
                     bool(normalized)
