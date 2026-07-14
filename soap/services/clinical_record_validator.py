@@ -241,6 +241,7 @@ class ClinicalRecordValidator:
             encounter.get("chief_complaint"),
             encounter.get("history"),
             encounter.get("subjective_symptoms"),
+            intake.get("raw_text"),
             intake.get("chief_complaint"),
             intake.get("history"),
             intake.get("subjective_symptoms"),
