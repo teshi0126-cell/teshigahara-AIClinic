@@ -61,6 +61,12 @@ JSONにない情報は追加しないでください。
             result
         )
 
+        result = (
+            self.remove_objective_assessment_duplicates(
+                result
+            )
+        )
+
         return self.remove_empty_bullets(
             result
         )
@@ -237,6 +243,84 @@ JSONにない情報は追加しないでください。
                     seen.add(normalized)
 
             lines.append(line)
+
+        return "\n".join(lines).rstrip()
+
+    @staticmethod
+    def remove_objective_assessment_duplicates(
+        soap_text: str,
+    ) -> str:
+        """
+        AがOと同一文のコピーだけなら、A側の重複を除外する。
+
+        「血圧高値。降圧不十分」など解釈が加わったAは残す。
+        """
+        objective_items = set()
+        current_section = ""
+
+        for line in soap_text.splitlines():
+            stripped = line.strip()
+            header = re.match(
+                r"^([SOAP])[：:]$",
+                stripped,
+                re.IGNORECASE,
+            )
+
+            if header:
+                current_section = (
+                    header.group(1).upper()
+                )
+                continue
+
+            if (
+                current_section == "O"
+                and stripped.startswith(("-", "・"))
+            ):
+                normalized = re.sub(
+                    r"[\s。．、，]",
+                    "",
+                    stripped.lstrip("-・").strip(),
+                )
+
+                if normalized:
+                    objective_items.add(normalized)
+
+        lines = []
+        current_section = ""
+
+        for line in soap_text.splitlines():
+            stripped = line.strip()
+            header = re.match(
+                r"^([SOAP])[：:]$",
+                stripped,
+                re.IGNORECASE,
+            )
+
+            if header:
+                current_section = (
+                    header.group(1).upper()
+                )
+                lines.append(line)
+                continue
+
+            duplicate = False
+
+            if (
+                current_section == "A"
+                and stripped.startswith(("-", "・"))
+            ):
+                normalized = re.sub(
+                    r"[\s。．、，]",
+                    "",
+                    stripped.lstrip("-・").strip(),
+                )
+                duplicate = (
+                    bool(normalized)
+                    and normalized in objective_items
+                )
+
+            if not duplicate:
+                lines.append(line)
 
         return "\n".join(lines).rstrip()
 
