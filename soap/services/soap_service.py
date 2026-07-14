@@ -57,6 +57,10 @@ JSONにない情報は追加しないでください。
             encounter,
         )
 
+        result = self.remove_report_narration(
+            result
+        )
+
         result = self.remove_duplicate_bullets(
             result
         )
@@ -247,6 +251,53 @@ JSONにない情報は追加しないでください。
         return "\n".join(lines).rstrip()
 
     @staticmethod
+    def remove_report_narration(
+        soap_text: str,
+    ) -> str:
+        """
+        「患者が回答」「医師発言あり」という
+        SOAPとして不要な報告枠を事実表現へ整える。
+        """
+        lines = []
+
+        for line in soap_text.splitlines():
+            stripped = line.strip()
+
+            if not stripped.startswith(("-", "・")):
+                lines.append(line)
+                continue
+
+            prefix = line[: len(line) - len(line.lstrip())]
+            bullet = stripped[0]
+            content = stripped[1:].strip()
+            original = content
+
+            content = re.sub(
+                r"(との?)?医師(?:の)?発言あり[。．]?$",
+                "",
+                content,
+            )
+
+            content = re.sub(
+                r"と回答(?:した)?[。．]?$",
+                "",
+                content,
+            )
+
+            content = content.rstrip(
+                "。．、， "
+            )
+
+            if content and content != original:
+                lines.append(
+                    f"{prefix}{bullet} {content}。"
+                )
+            else:
+                lines.append(line)
+
+        return "\n".join(lines).rstrip()
+
+    @staticmethod
     def normalize_for_oa_comparison(
         text: str,
     ) -> str:
@@ -277,7 +328,7 @@ JSONにない情報は追加しないでください。
         )
 
         normalized = re.sub(
-            r"(本日|今日は|今日)",
+            r"(本日(?:は|の)?|今日は|今日)",
             "",
             normalized,
         )
