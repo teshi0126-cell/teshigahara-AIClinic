@@ -501,6 +501,45 @@ class SOAPOutputCleanupTests(SimpleTestCase):
         )
 
 
+    def test_assessment_copy_of_objective_is_removed(self):
+        soap = (
+            "S：\n- 薬は飲んでいる。\n\n"
+            "O：\n- 本日の血圧が高い。\n\n"
+            "A：\n- 本日の血圧が高い。\n\n"
+            "P："
+        )
+
+        result = (
+            SOAPService.remove_objective_assessment_duplicates(
+                soap
+            )
+        )
+
+        self.assertEqual(
+            result.count("本日の血圧が高い"),
+            1,
+        )
+        self.assertIn("O：\n- 本日の血圧が高い", result)
+        self.assertIn("A：", result)
+
+    def test_assessment_with_interpretation_is_kept(self):
+        soap = (
+            "O：\n- 本日の血圧が高い。\n\n"
+            "A：\n- 血圧高値で降圧不十分。"
+        )
+
+        result = (
+            SOAPService.remove_objective_assessment_duplicates(
+                soap
+            )
+        )
+
+        self.assertIn(
+            "血圧高値で降圧不十分",
+            result,
+        )
+
+
 class RecorderWorkflowTests(SimpleTestCase):
     @classmethod
     def setUpClass(cls):
