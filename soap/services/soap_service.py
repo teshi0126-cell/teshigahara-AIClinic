@@ -47,9 +47,22 @@ JSONにない情報は追加しないでください。
             encounter,
         )
 
-        return self.remove_unsupported_plan_actions(
+        result = self.remove_unsupported_plan_actions(
             result,
             encounter,
+        )
+
+        result = self.remove_inferred_exam_actions(
+            result,
+            encounter,
+        )
+
+        result = self.remove_duplicate_bullets(
+            result
+        )
+
+        return self.remove_empty_bullets(
+            result
         )
 
     @staticmethod
@@ -89,6 +102,156 @@ JSONにない情報は追加しないでください。
 
             if not unsupported:
                 lines.append(line)
+
+        return "\n".join(lines).rstrip()
+
+    @staticmethod
+    def remove_inferred_exam_actions(
+        soap_text: str,
+        encounter: dict,
+    ) -> str:
+        """
+        診察中の声かけから推定された診察行為をPから除外する。
+
+        例：「音を聞かせて」だけを根拠に
+        「聴診を行う」という計画を作らない。
+        """
+        encounter_section = encounter.get(
+            "encounter",
+            {},
+        )
+
+        if not isinstance(encounter_section, dict):
+            encounter_section = {}
+
+        intake_section = encounter.get(
+            "intake",
+            {},
+        )
+
+        if not isinstance(intake_section, dict):
+            intake_section = {}
+
+        source_text = " ".join(
+            [
+                str(
+                    encounter_section.get(
+                        "raw_text",
+                        "",
+                    )
+                    or ""
+                ),
+                str(
+                    intake_section.get(
+                        "raw_text",
+                        "",
+                    )
+                    or ""
+                ),
+            ]
+        )
+
+        exam_actions = (
+            "聴診",
+            "触診",
+            "打診",
+            "視診",
+        )
+
+        lines = []
+        current_section = ""
+
+        for line in soap_text.splitlines():
+            stripped = line.strip()
+            header = re.match(
+                r"^([SOAP])[：:]$",
+                stripped,
+                re.IGNORECASE,
+            )
+
+            if header:
+                current_section = (
+                    header.group(1).upper()
+                )
+
+            inferred_exam = (
+                current_section == "P"
+                and any(
+                    action in stripped
+                    and action not in source_text
+                    for action in exam_actions
+                )
+            )
+
+            if not inferred_exam:
+                lines.append(line)
+
+        return "\n".join(lines).rstrip()
+
+    @staticmethod
+    def remove_duplicate_bullets(
+        soap_text: str,
+    ) -> str:
+        """
+        同一セクション内の完全重複した箇条書きを除外する。
+        """
+        lines = []
+        seen_by_section = {}
+        current_section = ""
+
+        for line in soap_text.splitlines():
+            stripped = line.strip()
+            header = re.match(
+                r"^([SOAP])[：:]$",
+                stripped,
+                re.IGNORECASE,
+            )
+
+            if header:
+                current_section = (
+                    header.group(1).upper()
+                )
+                seen_by_section.setdefault(
+                    current_section,
+                    set(),
+                )
+                lines.append(line)
+                continue
+
+            if stripped.startswith(("-", "・")):
+                normalized = re.sub(
+                    r"[\s。．、，]",
+                    "",
+                    stripped.lstrip("-・").strip(),
+                )
+
+                if normalized:
+                    seen = seen_by_section.setdefault(
+                        current_section,
+                        set(),
+                    )
+
+                    if normalized in seen:
+                        continue
+
+                    seen.add(normalized)
+
+            lines.append(line)
+
+        return "\n".join(lines).rstrip()
+
+    @staticmethod
+    def remove_empty_bullets(
+        soap_text: str,
+    ) -> str:
+        """
+        「O：\n-」のような内容のない箇条書きを除外する。
+        """
+        lines = [
+            line
+            for line in soap_text.splitlines()
+            if line.strip() not in {"-", "・"}
+        ]
 
         return "\n".join(lines).rstrip()
 
