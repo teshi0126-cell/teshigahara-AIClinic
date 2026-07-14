@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>AIClinic</title>
-    <link rel="stylesheet" href="{% static 'soap/css/ai_clinic.css' %}?v=23">
+    <link rel="stylesheet" href="{% static 'soap/css/ai_clinic.css' %}?v=24">
 </head>
 <body>
 
@@ -23,9 +23,16 @@
 
     <section class="card recording-card">
         <h2>診察録音</h2>
+        <label class="recording-confirmation">
+            <input type="checkbox" id="recordingConsent">
+            患者さんへの録音・AI処理の説明を確認しました
+        </label>
+        <p class="hint privacy-hint">
+            録音開始前に、院内の運用方針に従って患者さんへ説明してください。
+        </p>
         <div class="recording-actions">
             <button type="button" id="newSessionBtn" class="secondary">＋ 新しい診察</button>
-            <button type="button" id="startBtn" class="start">🎤 診察開始</button>
+            <button type="button" id="startBtn" class="start" disabled>🎤 診察開始</button>
             <button type="button" id="stopBtn" class="stop" disabled>■ 停止</button>
             <button type="button" id="retryFinalBtn" class="warning" hidden>↻ 最終処理を再試行</button>
         </div>
@@ -142,7 +149,7 @@
 
 </div>
 
-<script src="{% static 'soap/js/recorder.js' %}?v=22"></script>
+<script src="{% static 'soap/js/recorder.js' %}?v=24"></script>
 
 </body>
 </html>
