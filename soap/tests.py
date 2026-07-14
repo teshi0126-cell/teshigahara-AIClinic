@@ -1307,6 +1307,10 @@ class OperationsReadinessTests(SimpleTestCase):
                 "chcp 65001 >nul",
                 script,
             )
+            self.assertEqual(
+                script,
+                script.encode("ascii").decode("ascii"),
+            )
 
     def test_start_script_uses_waitress_on_loopback_only(self):
         self.assertIn(
