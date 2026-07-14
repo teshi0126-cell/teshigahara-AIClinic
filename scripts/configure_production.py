@@ -77,7 +77,7 @@ def configure_environment() -> None:
         if key not in written:
             updated.append(f"{key}={value}")
 
-    temporary_path = ENV_PATH.with_suffix(".env.tmp")
+    temporary_path = ENV_PATH.with_name(".env.tmp")
     temporary_path.write_text(
         "\n".join(updated).rstrip() + "\n",
         encoding="utf-8",
