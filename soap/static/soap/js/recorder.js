@@ -1,6 +1,11 @@
 let mediaRecorder;
 let stream;
 let isRecording = false;
+let sessionState = "idle";
+let sessionDirty = false;
+let allowPageUnload = false;
+let retainedFinalBlob = null;
+let retainedFinalTranscript = "";
 
 let realtimeChunks = [];
 let fullAudioChunks = [];
@@ -24,8 +29,13 @@ let pcmSampleCount = 0;
 const REALTIME_CHUNK_SECONDS = 10;
 const MICROPHONE_GAIN = 2.5;
 
+const newSessionBtn = document.getElementById("newSessionBtn");
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
+const retryFinalBtn = document.getElementById("retryFinalBtn");
+const completeSessionBtn = document.getElementById("completeSessionBtn");
+const sessionHint = document.getElementById("sessionHint");
+const soapForm = document.getElementById("soapForm");
 const statusText = document.getElementById("status");
 const soapStatus = document.getElementById("soapStatus");
 
@@ -51,6 +61,115 @@ function setSoapStatus(text) {
     if (soapStatus) {
         soapStatus.innerText = text;
     }
+}
+
+function isSessionBusy() {
+    return [
+        "recording",
+        "stopping",
+        "finalizing"
+    ].includes(sessionState);
+}
+
+function setSessionState(state, hint = "") {
+    sessionState = state;
+
+    startBtn.disabled = state !== "idle";
+    stopBtn.disabled = state !== "recording";
+    newSessionBtn.disabled = isSessionBusy();
+
+    retryFinalBtn.hidden = !(
+        state === "error"
+        && (retainedFinalBlob || retainedFinalTranscript)
+    );
+
+    completeSessionBtn.disabled = !(
+        state === "ready"
+        && sessionDirty
+    );
+
+    sessionHint.className = "session-hint";
+
+    if (state === "error") {
+        sessionHint.classList.add("error");
+    } else if (state === "ready" && !sessionDirty) {
+        sessionHint.classList.add("complete");
+    }
+
+    if (hint) {
+        sessionHint.innerText = hint;
+    }
+}
+
+function markSessionDirty() {
+    sessionDirty = true;
+
+    if (sessionState === "ready") {
+        completeSessionBtn.disabled = false;
+    }
+}
+
+function resetRecordingBuffers() {
+    realtimeChunks = [];
+    fullAudioChunks = [];
+    conversationChunks = [];
+    activeTranscriptions = new Set();
+    pendingTranscripts = new Map();
+    nextChunkSequence = 0;
+    nextChunkToRender = 0;
+    pcmBuffers = [];
+    pcmSampleCount = 0;
+    retainedFinalBlob = null;
+    retainedFinalTranscript = "";
+}
+
+function clearSessionOutputs() {
+    intakeNote.value = "";
+    intakeNoteHidden.value = "";
+    medicalNote.value = "";
+    soapResult.value = "";
+    encounterJson.value = "";
+    referralResult.value = "";
+    clinicalChecks.innerHTML = "";
+    diagnosisList.innerHTML = "";
+
+    const copyMessage = document.getElementById(
+        "copy_message"
+    );
+    const referralCopyMessage = document.getElementById(
+        "referral_copy_message"
+    );
+
+    if (copyMessage) copyMessage.innerText = "";
+    if (referralCopyMessage) {
+        referralCopyMessage.innerText = "";
+    }
+}
+
+function startNewSession() {
+    if (isSessionBusy()) return;
+
+    if (
+        sessionDirty
+        && !window.confirm(
+            "現在の診察内容はまだDigiKar転記済みに"
+            + "なっていません。内容を消して新しい診察を"
+            + "開始しますか？"
+        )
+    ) {
+        return;
+    }
+
+    resetRecordingBuffers();
+    clearSessionOutputs();
+    sessionDirty = false;
+
+    statusText.innerText = "待機中";
+    setSoapStatus("待機中");
+    setSessionState(
+        "idle",
+        "受付問診を入力して診察を開始できます。"
+    );
 }
 
 function getCsrfToken() {
@@ -112,22 +231,33 @@ async function transcribeBlob(blob, filename, isFinal = false) {
     formData.append("intake_note", intakeNote.value);
     formData.append("is_final", isFinal ? "true" : "false");
 
-    const response = await fetch("/transcribe_chunk/", {
-        method: "POST",
-        headers: {
-            "X-CSRFToken": getCsrfToken()
-        },
-        body: formData
-    });
+    let response;
+    let data;
 
-    const data = await response.json();
+    try {
+        response = await fetch("/transcribe_chunk/", {
+            method: "POST",
+            headers: {
+                "X-CSRFToken": getCsrfToken()
+            },
+            body: formData
+        });
 
-    if (data.error) {
+        data = await response.json();
+    } catch (error) {
+        console.error("文字起こし通信エラー", error);
+        statusText.innerText = "文字起こし通信エラー";
+        setSoapStatus("再試行待ち");
+        return "";
+    }
+
+    if (!response.ok || data.error) {
         console.error("文字起こしエラー", data.error);
         statusText.innerText = (
-            "文字起こしエラー：" + data.error
+            "文字起こしエラー："
+            + (data.error || response.status)
         );
-        setSoapStatus("エラー");
+        setSoapStatus("再試行待ち");
         return "";
     }
 
@@ -137,7 +267,7 @@ async function transcribeBlob(blob, filename, isFinal = false) {
 async function updateSOAP() {
     const combinedExists = intakeNote.value.trim() || medicalNote.value.trim();
 
-    if (!combinedExists) return;
+    if (!combinedExists) return false;
 
     const formData = new FormData();
     formData.append("intake_note", intakeNote.value);
@@ -145,15 +275,25 @@ async function updateSOAP() {
     formData.append("conversation_chunks", JSON.stringify(conversationChunks));
     formData.append("current_soap", soapResult.value);
 
-    const response = await fetch("/generate_soap/", {
-        method: "POST",
-        headers: {
-            "X-CSRFToken": getCsrfToken()
-        },
-        body: formData
-    });
+    let response;
+    let data;
 
-    const data = await response.json();
+    try {
+        response = await fetch("/generate_soap/", {
+            method: "POST",
+            headers: {
+                "X-CSRFToken": getCsrfToken()
+            },
+            body: formData
+        });
+
+        data = await response.json();
+    } catch (error) {
+        console.error("SOAP生成通信エラー", error);
+        statusText.innerText = "SOAP生成通信エラー";
+        setSoapStatus("再試行待ち");
+        return false;
+    }
 
     if (data.soap_result) {
         soapResult.value = data.soap_result;
@@ -195,10 +335,16 @@ async function updateSOAP() {
         renderDiagnoses(data.diagnoses);
     }
 
-    if (data.error) {
-        statusText.innerText = "エラー：" + data.error;
-        setSoapStatus("エラー");
+    if (!response.ok || data.error) {
+        statusText.innerText = (
+            "エラー："
+            + (data.error || response.status)
+        );
+        setSoapStatus("再試行待ち");
+        return false;
     }
+
+    return Boolean(data.soap_result);
 }
 
 function updateAudioLevel() {
@@ -483,40 +629,122 @@ async function handleRealtimeChunk(blob, sequence) {
     }
 }
 
-async function finalizeFullRecording() {
-    if (fullAudioChunks.length === 0) return;
+async function finalizeFullRecording(blobOverride = null) {
+    if (!blobOverride && fullAudioChunks.length === 0) {
+        return;
+    }
 
+    setSessionState(
+        "finalizing",
+        "最終文字起こしとSOAPを生成しています。"
+    );
     statusText.innerText = "最終文字起こし中...";
     setSoapStatus("最終文字起こし中");
 
-    const fullBlob = new Blob(fullAudioChunks, {
-        type: "audio/webm;codecs=opus"
-    });
+    retainedFinalBlob = blobOverride || new Blob(
+        fullAudioChunks,
+        {
+            type: "audio/webm;codecs=opus"
+        }
+    );
 
     await stopRealtimePcmCapture();
     await Promise.all(Array.from(activeTranscriptions));
 
     const finalTranscript = await transcribeBlob(
-        fullBlob,
+        retainedFinalBlob,
         "full_recording.webm",
         true
     );
 
-    if (finalTranscript) {
-        medicalNote.value = finalTranscript + "\n";
-        conversationChunks = [finalTranscript];
-
-        statusText.innerText = "最終SOAP更新中...";
-        setSoapStatus("最終更新中");
-
-        await updateSOAP();
-
-        statusText.innerText = "録音停止";
-        setSoapStatus("更新済み");
-    } else {
-        statusText.innerText = "録音停止。最終文字起こしなし。";
-        setSoapStatus("確認待ち");
+    if (!finalTranscript) {
+        markSessionDirty();
+        statusText.innerText = (
+            "最終文字起こしに失敗。"
+            + "途中の文字起こしと音声を保持しています。"
+        );
+        setSoapStatus("再試行待ち");
+        setSessionState(
+            "error",
+            "最終処理を再試行できます。"
+            + "画面を閉じないでください。"
+        );
+        return;
     }
+
+    retainedFinalTranscript = finalTranscript;
+    medicalNote.value = finalTranscript + "\n";
+    conversationChunks = [finalTranscript];
+    markSessionDirty();
+
+    statusText.innerText = "最終SOAP更新中...";
+    setSoapStatus("最終更新中");
+
+    const soapUpdated = await updateSOAP();
+
+    if (!soapUpdated) {
+        statusText.innerText = (
+            "文字起こしは保存済み。SOAP生成を再試行できます。"
+        );
+        setSoapStatus("再試行待ち");
+        setSessionState(
+            "error",
+            "最終文字起こしを保持しています。"
+            + "SOAP生成を再試行してください。"
+        );
+        return;
+    }
+
+    retainedFinalBlob = null;
+    retainedFinalTranscript = "";
+    statusText.innerText = "録音停止・SOAP更新済み";
+    setSoapStatus("更新済み");
+    setSessionState(
+        "ready",
+        "SOAPをDigiKarへ転記後、"
+        + "「DigiKar転記済み」を押してください。"
+    );
+}
+
+async function retryFinalProcessing() {
+    if (
+        sessionState !== "error"
+        || (!retainedFinalBlob && !retainedFinalTranscript)
+    ) {
+        return;
+    }
+
+    if (retainedFinalTranscript) {
+        setSessionState(
+            "finalizing",
+            "保持中の文字起こしからSOAPを再生成しています。"
+        );
+        medicalNote.value = retainedFinalTranscript + "\n";
+        conversationChunks = [retainedFinalTranscript];
+
+        const soapUpdated = await updateSOAP();
+
+        if (soapUpdated) {
+            retainedFinalBlob = null;
+            retainedFinalTranscript = "";
+            statusText.innerText = "SOAP更新済み";
+            setSoapStatus("更新済み");
+            setSessionState(
+                "ready",
+                "SOAPをDigiKarへ転記後、"
+                + "「DigiKar転記済み」を押してください。"
+            );
+        } else {
+            setSessionState(
+                "error",
+                "SOAP生成に失敗しました。再試行できます。"
+            );
+        }
+
+        return;
+    }
+
+    await finalizeFullRecording(retainedFinalBlob);
 }
 
 async function generateReferral() {
@@ -567,33 +795,60 @@ function copyReferral() {
     document.getElementById("referral_copy_message").innerText = "紹介状をコピーしました。";
 }
 
+newSessionBtn.onclick = startNewSession;
+retryFinalBtn.onclick = retryFinalProcessing;
+
+completeSessionBtn.onclick = function() {
+    if (sessionState !== "ready") return;
+
+    sessionDirty = false;
+    statusText.innerText = "DigiKar転記済み";
+    setSessionState(
+        "ready",
+        "転記済みです。「新しい診察」へ進めます。"
+    );
+};
+
 startBtn.onclick = async function() {
-    realtimeChunks = [];
-    fullAudioChunks = [];
-    conversationChunks = [];
-    activeTranscriptions = new Set();
-    pendingTranscripts = new Map();
-    nextChunkSequence = 0;
-    nextChunkToRender = 0;
-    pcmBuffers = [];
-    pcmSampleCount = 0;
+    if (sessionState !== "idle") return;
+
+    resetRecordingBuffers();
 
     medicalNote.value = "";
     soapResult.value = "";
     encounterJson.value = "";
+    referralResult.value = "";
+    clinicalChecks.innerHTML = "";
+    diagnosisList.innerHTML = "";
 
     setSoapStatus("診察終了後に生成");
+    setSessionState(
+        "finalizing",
+        "マイクを準備しています。"
+    );
 
-    stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false,
-            channelCount: 1
-        }
-    });
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+                channelCount: 1
+            }
+        });
+    } catch (error) {
+        console.error("マイク取得エラー", error);
+        statusText.innerText = "マイクを使用できません";
+        setSoapStatus("待機中");
+        setSessionState(
+            "idle",
+            "マイクの接続とブラウザの許可を確認してください。"
+        );
+        return;
+    }
 
     isRecording = true;
+    markSessionDirty();
 
     const amplifiedStream = startRealtimePcmCapture(
         stream
@@ -615,29 +870,76 @@ startBtn.onclick = async function() {
         }
 
         isRecording = false;
-        startBtn.disabled = false;
-        stopBtn.disabled = true;
-
         await finalizeFullRecording();
     };
 
     mediaRecorder.start(5000);
 
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
     statusText.innerText = "録音中...";
+    setSessionState(
+        "recording",
+        "録音中です。患者切替や画面終了はできません。"
+    );
 };
 
 stopBtn.onclick = function() {
-    isRecording = false;
-
-    if (mediaRecorder && mediaRecorder.state === "recording") {
-        mediaRecorder.requestData();
-
-        setTimeout(() => {
-            if (mediaRecorder.state === "recording") {
-                mediaRecorder.stop();
-            }
-        }, 1200);
+    if (
+        sessionState !== "recording"
+        || !mediaRecorder
+        || mediaRecorder.state !== "recording"
+    ) {
+        return;
     }
+
+    isRecording = false;
+    setSessionState(
+        "stopping",
+        "録音を停止しています。連続して押さないでください。"
+    );
+    mediaRecorder.requestData();
+
+    setTimeout(() => {
+        if (mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+        }
+    }, 1200);
 };
+
+[intakeNote, medicalNote, soapResult].forEach(element => {
+    element.addEventListener("input", markSessionDirty);
+});
+
+soapForm.addEventListener("submit", function() {
+    syncIntakeBeforeSubmit();
+    allowPageUnload = true;
+});
+
+window.addEventListener("beforeunload", function(event) {
+    if (
+        allowPageUnload
+        || (!sessionDirty && !isSessionBusy())
+    ) {
+        return;
+    }
+
+    event.preventDefault();
+    event.returnValue = "";
+});
+
+if (soapResult.value.trim()) {
+    sessionDirty = true;
+    setSessionState(
+        "ready",
+        "SOAPをDigiKarへ転記後、"
+        + "「DigiKar転記済み」を押してください。"
+    );
+} else {
+    sessionDirty = Boolean(
+        intakeNote.value.trim()
+        || medicalNote.value.trim()
+    );
+    setSessionState(
+        "idle",
+        "受付問診を入力して診察を開始できます。"
+    );
+}
