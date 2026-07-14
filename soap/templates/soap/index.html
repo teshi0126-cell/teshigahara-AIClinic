@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>AIClinic</title>
-    <link rel="stylesheet" href="{% static 'soap/css/ai_clinic.css' %}">
+    <link rel="stylesheet" href="{% static 'soap/css/ai_clinic.css' %}?v=22">
 </head>
 <body>
 
@@ -25,6 +25,29 @@
         <h2>診察録音</h2>
         <button type="button" id="startBtn" class="start">🎤 診察開始</button>
         <button type="button" id="stopBtn" class="stop" disabled>■ 停止</button>
+
+        <div class="microphone-monitor">
+            <div class="microphone-device">
+                使用マイク：
+                <span id="microphoneDevice">未確認</span>
+            </div>
+            <div class="audio-level-row">
+                <span>入力レベル</span>
+                <meter
+                    id="audioLevelMeter"
+                    min="0"
+                    max="100"
+                    low="20"
+                    high="92"
+                    optimum="60"
+                    value="0"
+                ></meter>
+                <span id="audioLevelText">待機中</span>
+            </div>
+            <p class="hint">
+                患者さんの発声時にも緑色の範囲まで動く位置へマイクを置いてください。
+            </p>
+        </div>
     </section>
 
     <section class="card">
@@ -113,7 +136,7 @@
 
 </div>
 
-<script src="{% static 'soap/js/recorder.js' %}"></script>
+<script src="{% static 'soap/js/recorder.js' %}?v=21"></script>
 
 </body>
 </html>

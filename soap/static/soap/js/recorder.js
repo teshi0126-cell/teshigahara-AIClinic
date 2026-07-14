@@ -10,6 +10,20 @@ let pendingTranscripts = new Map();
 let nextChunkSequence = 0;
 let nextChunkToRender = 0;
 
+let audioContext;
+let audioSource;
+let audioProcessor;
+let inputGain;
+let voiceCompressor;
+let recordingDestination;
+let analyserNode;
+let audioLevelFrame;
+let pcmBuffers = [];
+let pcmSampleCount = 0;
+
+const REALTIME_CHUNK_SECONDS = 10;
+const MICROPHONE_GAIN = 2.5;
+
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
 const statusText = document.getElementById("status");
@@ -25,6 +39,9 @@ const encounterJson = document.getElementById("encounter_json");
 
 const clinicalChecks = document.getElementById("clinical_checks");
 const diagnosisList = document.getElementById("diagnosis_list");
+const microphoneDevice = document.getElementById("microphoneDevice");
+const audioLevelMeter = document.getElementById("audioLevelMeter");
+const audioLevelText = document.getElementById("audioLevelText");
 
 function syncIntakeBeforeSubmit() {
     intakeNoteHidden.value = intakeNote.value;
@@ -106,7 +123,10 @@ async function transcribeBlob(blob, filename, isFinal = false) {
     const data = await response.json();
 
     if (data.error) {
-        statusText.innerText = "文字起こしエラー";
+        console.error("文字起こしエラー", data.error);
+        statusText.innerText = (
+            "文字起こしエラー：" + data.error
+        );
         setSoapStatus("エラー");
         return "";
     }
@@ -181,6 +201,253 @@ async function updateSOAP() {
     }
 }
 
+function updateAudioLevel() {
+    if (!analyserNode || !isRecording) return;
+
+    const samples = new Float32Array(
+        analyserNode.fftSize
+    );
+    analyserNode.getFloatTimeDomainData(samples);
+
+    let sumSquares = 0;
+
+    for (const sample of samples) {
+        sumSquares += sample * sample;
+    }
+
+    const rms = Math.sqrt(sumSquares / samples.length);
+    const decibels = rms > 0
+        ? 20 * Math.log10(rms)
+        : -60;
+    const clampedDb = Math.max(-60, Math.min(0, decibels));
+    const percentage = ((clampedDb + 60) / 60) * 100;
+
+    audioLevelMeter.value = percentage;
+
+    if (clampedDb < -42) {
+        audioLevelText.innerText = "小さい";
+    } else if (clampedDb > -8) {
+        audioLevelText.innerText = "大きすぎ";
+    } else {
+        audioLevelText.innerText = "適正";
+    }
+
+    audioLevelFrame = requestAnimationFrame(
+        updateAudioLevel
+    );
+}
+
+function startAudioLevelMonitor(mediaStream) {
+    const audioTrack = mediaStream.getAudioTracks()[0];
+
+    microphoneDevice.innerText = audioTrack
+        ? audioTrack.label || "選択中のマイク"
+        : "マイクを確認できません";
+
+    updateAudioLevel();
+}
+
+function stopAudioLevelMonitor() {
+    if (audioLevelFrame) {
+        cancelAnimationFrame(audioLevelFrame);
+    }
+
+    audioLevelFrame = null;
+    audioLevelMeter.value = 0;
+    audioLevelText.innerText = "停止";
+}
+
+function encodeWav(samples, sampleRate) {
+    const buffer = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buffer);
+
+    function writeText(offset, text) {
+        for (let i = 0; i < text.length; i += 1) {
+            view.setUint8(offset + i, text.charCodeAt(i));
+        }
+    }
+
+    writeText(0, "RIFF");
+    view.setUint32(4, 36 + samples.length * 2, true);
+    writeText(8, "WAVE");
+    writeText(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeText(36, "data");
+    view.setUint32(40, samples.length * 2, true);
+
+    let offset = 44;
+
+    for (const sample of samples) {
+        const clamped = Math.max(-1, Math.min(1, sample));
+        const value = clamped < 0
+            ? clamped * 0x8000
+            : clamped * 0x7fff;
+
+        view.setInt16(offset, value, true);
+        offset += 2;
+    }
+
+    return new Blob([buffer], { type: "audio/wav" });
+}
+
+function mergePcmBuffers(buffers, totalLength) {
+    const merged = new Float32Array(totalLength);
+    let offset = 0;
+
+    for (const buffer of buffers) {
+        merged.set(buffer, offset);
+        offset += buffer.length;
+    }
+
+    return merged;
+}
+
+function queueRealtimePcmChunk(force = false) {
+    if (!audioContext || pcmSampleCount === 0) return;
+
+    const minimumSamples = force
+        ? Math.floor(audioContext.sampleRate)
+        : Math.floor(
+            audioContext.sampleRate * REALTIME_CHUNK_SECONDS
+        );
+
+    if (pcmSampleCount < minimumSamples) return;
+
+    const samples = mergePcmBuffers(
+        pcmBuffers,
+        pcmSampleCount
+    );
+
+    pcmBuffers = [];
+    pcmSampleCount = 0;
+
+    const wavBlob = encodeWav(
+        samples,
+        audioContext.sampleRate
+    );
+    const sequence = nextChunkSequence;
+    nextChunkSequence += 1;
+
+    statusText.innerText = "文字起こし中...";
+
+    const task = handleRealtimeChunk(
+        wavBlob,
+        sequence
+    );
+
+    activeTranscriptions.add(task);
+
+    task.finally(() => {
+        activeTranscriptions.delete(task);
+    });
+}
+
+function startRealtimePcmCapture(mediaStream) {
+    audioContext = new AudioContext();
+    audioSource = audioContext.createMediaStreamSource(
+        mediaStream
+    );
+    inputGain = audioContext.createGain();
+    inputGain.gain.value = MICROPHONE_GAIN;
+
+    voiceCompressor = (
+        audioContext.createDynamicsCompressor()
+    );
+    voiceCompressor.threshold.value = -24;
+    voiceCompressor.knee.value = 20;
+    voiceCompressor.ratio.value = 6;
+    voiceCompressor.attack.value = 0.003;
+    voiceCompressor.release.value = 0.25;
+
+    recordingDestination = (
+        audioContext.createMediaStreamDestination()
+    );
+
+    audioProcessor = audioContext.createScriptProcessor(
+        4096,
+        1,
+        1
+    );
+
+    audioProcessor.onaudioprocess = event => {
+        if (!isRecording) return;
+
+        const samples = new Float32Array(
+            event.inputBuffer.getChannelData(0)
+        );
+
+        pcmBuffers.push(samples);
+        pcmSampleCount += samples.length;
+
+        queueRealtimePcmChunk(false);
+    };
+
+    audioSource.connect(inputGain);
+    inputGain.connect(voiceCompressor);
+
+    analyserNode = audioContext.createAnalyser();
+    analyserNode.fftSize = 2048;
+    analyserNode.smoothingTimeConstant = 0.75;
+
+    voiceCompressor.connect(analyserNode);
+    analyserNode.connect(audioProcessor);
+    analyserNode.connect(recordingDestination);
+    audioProcessor.connect(audioContext.destination);
+    startAudioLevelMonitor(mediaStream);
+
+    return recordingDestination.stream;
+}
+
+async function stopRealtimePcmCapture() {
+    queueRealtimePcmChunk(true);
+    stopAudioLevelMonitor();
+
+    if (audioProcessor) {
+        audioProcessor.disconnect();
+        audioProcessor.onaudioprocess = null;
+    }
+
+    if (analyserNode) {
+        analyserNode.disconnect();
+    }
+
+    if (voiceCompressor) {
+        voiceCompressor.disconnect();
+    }
+
+    if (inputGain) {
+        inputGain.disconnect();
+    }
+
+    if (audioSource) {
+        audioSource.disconnect();
+    }
+
+    if (recordingDestination) {
+        recordingDestination.stream
+            .getTracks()
+            .forEach(track => track.stop());
+    }
+
+    if (audioContext) {
+        await audioContext.close();
+    }
+
+    audioProcessor = null;
+    analyserNode = null;
+    voiceCompressor = null;
+    inputGain = null;
+    recordingDestination = null;
+    audioSource = null;
+    audioContext = null;
+}
+
 function flushRealtimeTranscripts() {
     while (pendingTranscripts.has(nextChunkToRender)) {
         const transcript = pendingTranscripts.get(nextChunkToRender);
@@ -188,8 +455,8 @@ function flushRealtimeTranscripts() {
         nextChunkToRender += 1;
 
         if (transcript) {
-            conversationChunks = [transcript];
-            medicalNote.value = transcript + "\n";
+            conversationChunks.push(transcript);
+            medicalNote.value += transcript + "\n";
         }
     }
 }
@@ -198,7 +465,7 @@ async function handleRealtimeChunk(blob, sequence) {
     try {
         const transcript = await transcribeBlob(
             blob,
-            "chunk_" + sequence + ".webm",
+            "chunk_" + sequence + ".wav",
             false
         );
 
@@ -226,6 +493,7 @@ async function finalizeFullRecording() {
         type: "audio/webm;codecs=opus"
     });
 
+    await stopRealtimePcmCapture();
     await Promise.all(Array.from(activeTranscriptions));
 
     const finalTranscript = await transcribeBlob(
@@ -307,6 +575,8 @@ startBtn.onclick = async function() {
     pendingTranscripts = new Map();
     nextChunkSequence = 0;
     nextChunkToRender = 0;
+    pcmBuffers = [];
+    pcmSampleCount = 0;
 
     medicalNote.value = "";
     soapResult.value = "";
@@ -314,39 +584,28 @@ startBtn.onclick = async function() {
 
     setSoapStatus("診察終了後に生成");
 
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            channelCount: 1
+        }
+    });
 
     isRecording = true;
 
-    mediaRecorder = new MediaRecorder(stream, {
+    const amplifiedStream = startRealtimePcmCapture(
+        stream
+    );
+
+    mediaRecorder = new MediaRecorder(amplifiedStream, {
         mimeType: "audio/webm;codecs=opus"
     });
 
-    mediaRecorder.ondataavailable = async function(event) {
+    mediaRecorder.ondataavailable = function(event) {
         if (event.data && event.data.size > 0) {
             fullAudioChunks.push(event.data);
-
-            if (isRecording) {
-                const cumulativeBlob = new Blob(
-                    fullAudioChunks,
-                    { type: "audio/webm;codecs=opus" }
-                );
-                const sequence = nextChunkSequence;
-                nextChunkSequence += 1;
-
-                statusText.innerText = "文字起こし中...";
-
-                const task = handleRealtimeChunk(
-                    cumulativeBlob,
-                    sequence
-                );
-
-                activeTranscriptions.add(task);
-
-                task.finally(() => {
-                    activeTranscriptions.delete(task);
-                });
-            }
         }
     };
 

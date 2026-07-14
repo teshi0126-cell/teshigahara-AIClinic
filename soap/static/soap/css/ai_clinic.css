@@ -346,3 +346,47 @@ summary{
     }
 
 }
+
+.microphone-monitor{
+    margin-top:16px;
+    padding:12px;
+    background:#ffffff;
+    border:1px solid #f0caca;
+    border-radius:8px;
+}
+
+.microphone-device{
+    margin-bottom:10px;
+    font-size:14px;
+    font-weight:bold;
+}
+
+.audio-level-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-size:13px;
+}
+
+.audio-level-track{
+    flex:1;
+    max-width:420px;
+    height:16px;
+    overflow:hidden;
+    background:linear-gradient(
+        to right,
+        #ef4444 0 20%,
+        #22c55e 20% 80%,
+        #f59e0b 80% 92%,
+        #dc2626 92% 100%
+    );
+    border-radius:20px;
+}
+
+.audio-level-bar{
+    width:0;
+    height:100%;
+    background:rgba(17,24,39,.65);
+    border-right:3px solid #111827;
+    transition:width .08s linear;
+}
