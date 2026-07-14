@@ -1272,6 +1272,9 @@ class OperationsReadinessTests(SimpleTestCase):
         cls.setup_script = (
             cls.root_dir / "setup_aiclinic.bat"
         ).read_text(encoding="utf-8")
+        cls.backup_script = (
+            cls.root_dir / "backup_aiclinic.bat"
+        ).read_text(encoding="utf-8")
 
     def test_health_endpoint_exposes_no_configuration(self):
         response = self.client.get("/health/")
@@ -1293,6 +1296,17 @@ class OperationsReadinessTests(SimpleTestCase):
         response = self.client.post("/health/")
 
         self.assertEqual(response.status_code, 405)
+
+    def test_windows_scripts_select_utf8_code_page(self):
+        for script in [
+            self.setup_script,
+            self.start_script,
+            self.backup_script,
+        ]:
+            self.assertIn(
+                "chcp 65001 >nul",
+                script,
+            )
 
     def test_start_script_uses_waitress_on_loopback_only(self):
         self.assertIn(
