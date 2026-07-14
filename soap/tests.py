@@ -271,15 +271,26 @@ class SpeechServiceTests(SimpleTestCase):
             content_type="audio/webm",
         )
 
-        result = service.transcribe_audio(
-            audio_file=audio,
-            intake_note="のどが痛い",
-            is_final=True,
-        )
+        with self.assertLogs(
+            "soap.services.speech_service",
+            level="ERROR",
+        ) as captured_logs:
+            result = service.transcribe_audio(
+                audio_file=audio,
+                intake_note="のどが痛い",
+                is_final=True,
+            )
 
         self.assertEqual(
             result,
             "咽頭痛があります。",
+        )
+        self.assertTrue(
+            any(
+                "Speaker diarization failed"
+                in message
+                for message in captured_logs.output
+            )
         )
         mock_client.responses.create.assert_not_called()
 
