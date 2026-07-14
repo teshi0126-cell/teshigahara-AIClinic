@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>AIClinic</title>
-    <link rel="stylesheet" href="{% static 'soap/css/ai_clinic.css' %}?v=22">
+    <link rel="stylesheet" href="{% static 'soap/css/ai_clinic.css' %}?v=23">
 </head>
 <body>
 
@@ -23,8 +23,13 @@
 
     <section class="card recording-card">
         <h2>診察録音</h2>
-        <button type="button" id="startBtn" class="start">🎤 診察開始</button>
-        <button type="button" id="stopBtn" class="stop" disabled>■ 停止</button>
+        <div class="recording-actions">
+            <button type="button" id="newSessionBtn" class="secondary">＋ 新しい診察</button>
+            <button type="button" id="startBtn" class="start">🎤 診察開始</button>
+            <button type="button" id="stopBtn" class="stop" disabled>■ 停止</button>
+            <button type="button" id="retryFinalBtn" class="warning" hidden>↻ 最終処理を再試行</button>
+        </div>
+        <p id="sessionHint" class="session-hint">受付問診を入力して診察を開始できます。</p>
 
         <div class="microphone-monitor">
             <div class="microphone-device">
@@ -75,6 +80,7 @@
         <br>
 
         <button type="button" class="copy" onclick="copySOAP()">SOAPをコピー</button>
+        <button type="button" id="completeSessionBtn" class="complete" disabled>✓ DigiKar転記済み</button>
         <p id="copy_message"></p>
     </section>
 
@@ -136,7 +142,7 @@
 
 </div>
 
-<script src="{% static 'soap/js/recorder.js' %}?v=21"></script>
+<script src="{% static 'soap/js/recorder.js' %}?v=22"></script>
 
 </body>
 </html>
