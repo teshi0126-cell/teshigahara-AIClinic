@@ -646,7 +646,7 @@ class RecorderWorkflowTests(SimpleTestCase):
             "async function finalizeFullRecording",
             1,
         )[1].split(
-            "async function generateReferral",
+            "async function retryFinalProcessing",
             1,
         )[0]
 
@@ -775,3 +775,138 @@ class RecorderWorkflowTests(SimpleTestCase):
             'formData.append("is_final", isFinal ? "true" : "false")',
             self.source,
         )
+
+class SessionSafetyWorkflowTests(SimpleTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        soap_dir = Path(__file__).resolve().parent
+
+        cls.recorder_source = (
+            soap_dir
+            / "static"
+            / "soap"
+            / "js"
+            / "recorder.js"
+        ).read_text(encoding="utf-8")
+
+        cls.template_source = (
+            soap_dir
+            / "templates"
+            / "soap"
+            / "index.html"
+        ).read_text(encoding="utf-8")
+
+    def test_session_controls_are_visible(self):
+        for element_id in [
+            "newSessionBtn",
+            "retryFinalBtn",
+            "completeSessionBtn",
+            "sessionHint",
+        ]:
+            self.assertIn(
+                f'id="{element_id}"',
+                self.template_source,
+            )
+
+    def test_recording_buttons_follow_explicit_state(self):
+        self.assertIn(
+            'let sessionState = "idle"',
+            self.recorder_source,
+        )
+        self.assertIn(
+            'startBtn.disabled = state !== "idle"',
+            self.recorder_source,
+        )
+        self.assertIn(
+            'stopBtn.disabled = state !== "recording"',
+            self.recorder_source,
+        )
+        self.assertIn(
+            'newSessionBtn.disabled = isSessionBusy()',
+            self.recorder_source,
+        )
+        self.assertIn(
+            'state === "ready"',
+            self.recorder_source,
+        )
+
+    def test_new_session_requires_confirmation_when_dirty(self):
+        session_section = self.recorder_source.split(
+            "function startNewSession()",
+            1,
+        )[1].split(
+            "function getCsrfToken()",
+            1,
+        )[0]
+
+        self.assertIn("sessionDirty", session_section)
+        self.assertIn("window.confirm", session_section)
+        self.assertIn(
+            "resetRecordingBuffers()",
+            session_section,
+        )
+        self.assertIn(
+            "clearSessionOutputs()",
+            session_section,
+        )
+
+    def test_api_failure_keeps_audio_for_retry(self):
+        final_section = self.recorder_source.split(
+            "async function finalizeFullRecording",
+            1,
+        )[1].split(
+            "async function generateReferral",
+            1,
+        )[0]
+
+        self.assertIn(
+            "retainedFinalBlob = blobOverride || new Blob",
+            final_section,
+        )
+        self.assertIn(
+            "retainedFinalTranscript = finalTranscript",
+            final_section,
+        )
+        self.assertIn(
+            'setSessionState(\n            "error"',
+            final_section,
+        )
+        self.assertIn(
+            "async function retryFinalProcessing()",
+            final_section,
+        )
+
+    def test_stop_button_is_idempotent(self):
+        stop_section = self.recorder_source.split(
+            "stopBtn.onclick = function()",
+            1,
+        )[1].split(
+            "[intakeNote, medicalNote, soapResult]",
+            1,
+        )[0]
+
+        self.assertIn(
+            'sessionState !== "recording"',
+            stop_section,
+        )
+        self.assertIn(
+            'mediaRecorder.state !== "recording"',
+            stop_section,
+        )
+        self.assertIn(
+            'setSessionState(\n        "stopping"',
+            stop_section,
+        )
+
+    def test_unsaved_or_busy_session_warns_before_unload(self):
+        unload_section = self.recorder_source.split(
+            'window.addEventListener("beforeunload"',
+            1,
+        )[1]
+
+        self.assertIn("sessionDirty", unload_section)
+        self.assertIn("isSessionBusy()", unload_section)
+        self.assertIn("event.preventDefault()", unload_section)
+        self.assertIn('event.returnValue = ""', unload_section)
+
