@@ -540,6 +540,45 @@ class SOAPOutputCleanupTests(SimpleTestCase):
         )
 
 
+    def test_paraphrased_blood_pressure_copy_is_removed(self):
+        soap = (
+            "O：\n- 本日、血圧高値。\n\n"
+            "A：\n"
+            "- 医師は、今日は血圧がかなり高い"
+            "と述べている。"
+        )
+
+        result = (
+            SOAPService.remove_objective_assessment_duplicates(
+                soap
+            )
+        )
+
+        self.assertIn("O：\n- 本日、血圧高値", result)
+        self.assertNotIn("医師は", result)
+        self.assertEqual(
+            result.count("血圧"),
+            1,
+        )
+
+    def test_blood_pressure_diagnosis_is_not_removed(self):
+        soap = (
+            "O：\n- 本日、血圧高値。\n\n"
+            "A：\n- 高血圧症として治療中。"
+        )
+
+        result = (
+            SOAPService.remove_objective_assessment_duplicates(
+                soap
+            )
+        )
+
+        self.assertIn(
+            "高血圧症として治療中",
+            result,
+        )
+
+
 class RecorderWorkflowTests(SimpleTestCase):
     @classmethod
     def setUpClass(cls):
