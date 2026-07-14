@@ -3,11 +3,11 @@ chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 
-echo [AIClinic] 初回設定を開始します。
+echo [AIClinic] Starting first-time setup.
 
 if not exist "venv\Scripts\python.exe" (
-    echo エラー: venvが見つかりません。
-    echo C:\AIClinicで仮想環境を確認してください。
+    echo ERROR: The Python virtual environment was not found.
+    echo Confirm that this file is in C:\AIClinic.
     pause
     exit /b 1
 )
@@ -36,14 +36,14 @@ if errorlevel 1 goto :failed
 if errorlevel 1 goto :failed
 
 echo.
-echo [AIClinic] 初回設定が完了しました。
-echo 次回から start_aiclinic.bat を使用してください。
+echo [AIClinic] First-time setup completed.
+echo Use start_aiclinic.bat for normal startup.
 pause
 exit /b 0
 
 :failed
 echo.
-echo [AIClinic] 設定中にエラーが発生しました。
-echo 画面を閉じず、表示内容を確認してください。
+echo [AIClinic] Setup failed.
+echo Keep this window open and review the error above.
 pause
 exit /b 1
