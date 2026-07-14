@@ -579,6 +579,44 @@ class SOAPOutputCleanupTests(SimpleTestCase):
         )
 
 
+    def test_report_narration_is_cleaned_before_oa_deduplication(
+        self,
+    ):
+        soap = (
+            "S：\n"
+            "- 薬をちゃんと飲んでいると回答。\n\n"
+            "O：\n"
+            "- 本日の血圧が高いとの医師発言あり。\n\n"
+            "A：\n"
+            "- 本日は血圧が高い。\n\n"
+            "P："
+        )
+
+        cleaned = SOAPService.remove_report_narration(
+            soap
+        )
+        result = (
+            SOAPService.remove_objective_assessment_duplicates(
+                cleaned
+            )
+        )
+
+        self.assertIn(
+            "薬をちゃんと飲んでいる。",
+            result,
+        )
+        self.assertIn(
+            "本日の血圧が高い。",
+            result,
+        )
+        self.assertNotIn("と回答", result)
+        self.assertNotIn("医師発言", result)
+        self.assertEqual(
+            result.count("血圧"),
+            1,
+        )
+
+
 class RecorderWorkflowTests(SimpleTestCase):
     @classmethod
     def setUpClass(cls):
