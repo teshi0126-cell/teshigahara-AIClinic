@@ -9,6 +9,7 @@ from django.test import SimpleTestCase
 from .services.soap_service import SOAPService
 from .services.speech_service import SpeechService
 from .services.visit_analyzer_service import VisitAnalyzerService
+from .services.clinical_record_validator import ClinicalRecordValidator
 
 
 class VisitAnalyzerValidationTests(SimpleTestCase):
@@ -909,4 +910,170 @@ class SessionSafetyWorkflowTests(SimpleTestCase):
         self.assertIn("isSessionBusy()", unload_section)
         self.assertIn("event.preventDefault()", unload_section)
         self.assertIn('event.returnValue = ""', unload_section)
+
+class ClinicalRecordValidatorTests(SimpleTestCase):
+    def setUp(self):
+        self.validator = ClinicalRecordValidator()
+
+    @staticmethod
+    def by_item(checks, text):
+        return next(
+            check
+            for check in checks
+            if text in check["item"]
+        )
+
+    def test_supported_record_passes_all_quality_checks(self):
+        source = (
+            "話者A：血圧は125です。\n"
+            "話者B：薬は飲んでいます。"
+        )
+        encounter = {
+            "encounter": {
+                "patient_answers": [
+                    "薬は飲んでいる"
+                ]
+            }
+        }
+        soap = (
+            "S：\n- 薬は飲んでいる。\n\n"
+            "O：\n- 血圧125。\n\n"
+            "A：\n\nP："
+        )
+
+        checks = self.validator.validate(
+            source,
+            encounter,
+            soap,
+        )
+
+        quality_checks = [
+            check
+            for check in checks
+            if check["category"] == "記録品質"
+        ]
+        self.assertEqual(len(quality_checks), 5)
+        self.assertTrue(
+            all(
+                check["checked"]
+                for check in quality_checks
+            )
+        )
+
+    def test_number_not_found_in_source_is_flagged(self):
+        checks = self.validator.validate(
+            source_note="血圧は高いです。",
+            encounter={},
+            soap_text="O：\n- 血圧180。",
+        )
+
+        check = self.by_item(
+            checks,
+            "原文にない数値",
+        )
+
+        self.assertFalse(check["checked"])
+        self.assertEqual(check["level"], "high")
+        self.assertIn("180", check["item"])
+
+    def test_unknown_marker_in_soap_is_flagged(self):
+        checks = self.validator.validate(
+            source_note="聞き取り不明",
+            encounter={},
+            soap_text=(
+                "S：\n- ［聞き取り不明］"
+            ),
+        )
+
+        check = self.by_item(
+            checks,
+            "聞き取り不明語",
+        )
+
+        self.assertFalse(check["checked"])
+
+    def test_objective_assessment_duplicate_is_flagged(self):
+        checks = self.validator.validate(
+            source_note="今日は血圧が高い。",
+            encounter={},
+            soap_text=(
+                "O：\n- 本日、血圧高値。\n\n"
+                "A：\n- 今日は血圧が高い。"
+            ),
+        )
+
+        check = self.by_item(
+            checks,
+            "OとA",
+        )
+
+        self.assertFalse(check["checked"])
+        self.assertIn(
+            "今日は血圧が高い",
+            check["item"],
+        )
+
+    def test_meta_narration_is_flagged(self):
+        checks = self.validator.validate(
+            source_note="薬は飲んでいます。",
+            encounter={
+                "encounter": {
+                    "patient_answers": [
+                        "薬は飲んでいる"
+                    ]
+                }
+            },
+            soap_text=(
+                "S：\n- 薬は飲んでいると回答。"
+            ),
+        )
+
+        check = self.by_item(
+            checks,
+            "メタ表現",
+        )
+
+        self.assertFalse(check["checked"])
+        self.assertIn("と回答", check["item"])
+
+    def test_subjective_without_patient_evidence_is_flagged(self):
+        checks = self.validator.validate(
+            source_note=(
+                "話者A：筋肉痛はないですか。"
+            ),
+            encounter={
+                "encounter": {
+                    "patient_answers": []
+                },
+                "subjective_symptoms": [],
+            },
+            soap_text="S：\n- 筋肉痛なし。",
+        )
+
+        check = self.by_item(
+            checks,
+            "Sの患者回答",
+        )
+
+        self.assertFalse(check["checked"])
+
+    def test_intake_subjective_supports_soap_subjective(self):
+        checks = self.validator.validate(
+            source_note="受付問診：咳",
+            encounter={
+                "intake": {
+                    "chief_complaint": "咳",
+                    "history": [],
+                    "subjective_symptoms": ["咳"],
+                }
+            },
+            soap_text="S：\n- 咳あり。",
+        )
+
+        check = self.by_item(
+            checks,
+            "Sの患者回答",
+        )
+
+        self.assertTrue(check["checked"])
 

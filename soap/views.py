@@ -14,6 +14,7 @@ from .services.reasoning.engine import ClinicalReasoningEngine
 from .services.referral_service import ReferralService
 from .services.conversation_service import ConversationService
 from .services.visit_analyzer_service import VisitAnalyzerService
+from .services.clinical_record_validator import ClinicalRecordValidator
 
 logger = logging.getLogger(__name__)
 
@@ -226,11 +227,22 @@ def build_ai_outputs(
                 enhanced_note
             )
 
+    quality_validator = ClinicalRecordValidator()
+
+    quality_checks = quality_validator.validate(
+        source_note=combined_note,
+        encounter=encounter,
+        soap_text=soap_result,
+    )
+
     cds_service = CDSService()
 
-    clinical_checks = cds_service.get_checks(
-        enhanced_note,
-        encounter,
+    clinical_checks = (
+        quality_checks
+        + cds_service.get_checks(
+            enhanced_note,
+            encounter,
+        )
     )
 
     reasoning = ClinicalReasoningEngine()
