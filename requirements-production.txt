@@ -1,0 +1,3 @@
+# Windows院内PC用の追加依存関係
+waitress==3.0.2
+whitenoise==6.12.0
