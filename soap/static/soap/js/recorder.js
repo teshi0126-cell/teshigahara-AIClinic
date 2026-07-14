@@ -31,6 +31,7 @@ const MICROPHONE_GAIN = 2.5;
 
 const newSessionBtn = document.getElementById("newSessionBtn");
 const startBtn = document.getElementById("startBtn");
+const recordingConsent = document.getElementById("recordingConsent");
 const stopBtn = document.getElementById("stopBtn");
 const retryFinalBtn = document.getElementById("retryFinalBtn");
 const completeSessionBtn = document.getElementById("completeSessionBtn");
@@ -75,6 +76,11 @@ function setSessionState(state, hint = "") {
     sessionState = state;
 
     startBtn.disabled = state !== "idle";
+
+    if (state === "idle") {
+        startBtn.disabled = !recordingConsent.checked;
+    }
+
     stopBtn.disabled = state !== "recording";
     newSessionBtn.disabled = isSessionBusy();
 
@@ -132,6 +138,7 @@ function clearSessionOutputs() {
     referralResult.value = "";
     clinicalChecks.innerHTML = "";
     diagnosisList.innerHTML = "";
+    recordingConsent.checked = false;
 
     const copyMessage = document.getElementById(
         "copy_message"
@@ -173,6 +180,14 @@ function startNewSession() {
 }
 
 function getCsrfToken() {
+    const formToken = document.querySelector(
+        "[name=csrfmiddlewaretoken]"
+    );
+
+    if (formToken && formToken.value) {
+        return formToken.value;
+    }
+
     const name = "csrftoken";
     const cookies = document.cookie.split(";");
 
@@ -810,7 +825,16 @@ completeSessionBtn.onclick = function() {
 };
 
 startBtn.onclick = async function() {
-    if (sessionState !== "idle") return;
+    if (
+        sessionState !== "idle"
+        || !recordingConsent.checked
+    ) {
+        setSessionState(
+            "idle",
+            "患者さんへの録音・AI処理の説明確認が必要です。"
+        );
+        return;
+    }
 
     resetRecordingBuffers();
 
@@ -907,6 +931,17 @@ stopBtn.onclick = function() {
 
 [intakeNote, medicalNote, soapResult].forEach(element => {
     element.addEventListener("input", markSessionDirty);
+});
+
+recordingConsent.addEventListener("change", function() {
+    if (sessionState !== "idle") return;
+
+    setSessionState(
+        "idle",
+        recordingConsent.checked
+            ? "診察を開始できます。"
+            : "録音・AI処理の説明確認が必要です。"
+    );
 });
 
 soapForm.addEventListener("submit", function() {
