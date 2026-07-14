@@ -137,11 +137,17 @@ class SpeechServiceTests(SimpleTestCase):
 
 
     @patch("soap.services.speech_service.client")
-    def test_final_transcription_uses_speaker_diarization(
+    def test_final_transcription_uses_dual_pass_and_reconciliation(
         self,
         mock_client,
     ):
-        mock_client.audio.transcriptions.create.return_value = (
+        mock_client.audio.transcriptions.create.side_effect = [
+            SimpleNamespace(
+                text=(
+                    "今日はどうされましたか。"
+                    "頭が痛いです。"
+                )
+            ),
             SimpleNamespace(
                 segments=[
                     SimpleNamespace(
@@ -153,11 +159,22 @@ class SpeechServiceTests(SimpleTestCase):
                         text="頭が痛いです。",
                     ),
                 ]
+            ),
+        ]
+        mock_client.responses.create.return_value = (
+            SimpleNamespace(
+                output_text=(
+                    "話者A：今日はどうされましたか。\n"
+                    "話者B：頭が痛いです。"
+                )
             )
         )
 
         service = SpeechService.__new__(SpeechService)
         service.medical_dictionary = Mock()
+        service.medical_dictionary.build_transcription_prompt.return_value = (
+            "頭痛、咽頭痛"
+        )
         service.medical_dictionary.correct.side_effect = (
             lambda text: text
         )
@@ -174,26 +191,166 @@ class SpeechServiceTests(SimpleTestCase):
             is_final=True,
         )
 
-        kwargs = (
-            mock_client.audio.transcriptions.create.call_args.kwargs
+        calls = (
+            mock_client.audio.transcriptions.create.call_args_list
+        )
+        self.assertEqual(len(calls), 2)
+
+        accurate_kwargs = calls[0].kwargs
+        self.assertEqual(
+            accurate_kwargs["model"],
+            "gpt-4o-transcribe",
         )
         self.assertEqual(
-            kwargs["model"],
+            accurate_kwargs["prompt"],
+            "頭痛、咽頭痛",
+        )
+
+        diarized_kwargs = calls[1].kwargs
+        self.assertEqual(
+            diarized_kwargs["model"],
             "gpt-4o-transcribe-diarize",
         )
         self.assertEqual(
-            kwargs["response_format"],
+            diarized_kwargs["response_format"],
             "diarized_json",
         )
         self.assertEqual(
-            kwargs["chunking_strategy"],
+            diarized_kwargs["chunking_strategy"],
             "auto",
         )
-        self.assertNotIn("prompt", kwargs)
+        self.assertNotIn("prompt", diarized_kwargs)
+
+        merge_prompt = (
+            mock_client.responses.create.call_args.kwargs[
+                "input"
+            ]
+        )
+        self.assertIn(
+            "今日はどうされましたか。頭が痛いです。",
+            merge_prompt,
+        )
+        self.assertIn(
+            "話者A：今日はどうされましたか。",
+            merge_prompt,
+        )
+        self.assertIn(
+            "どちらにも存在しない症状",
+            merge_prompt,
+        )
         self.assertEqual(
             result,
             "話者A：今日はどうされましたか。\n"
             "話者B：頭が痛いです。",
+        )
+
+    @patch("soap.services.speech_service.client")
+    def test_final_transcription_falls_back_when_diarization_fails(
+        self,
+        mock_client,
+    ):
+        mock_client.audio.transcriptions.create.side_effect = [
+            SimpleNamespace(
+                text="咽頭痛があります。"
+            ),
+            RuntimeError("diarization unavailable"),
+        ]
+
+        service = SpeechService.__new__(SpeechService)
+        service.medical_dictionary = Mock()
+        service.medical_dictionary.build_transcription_prompt.return_value = (
+            "咽頭痛"
+        )
+        service.medical_dictionary.correct.side_effect = (
+            lambda text: text
+        )
+
+        audio = SimpleUploadedFile(
+            "final.webm",
+            b"audio",
+            content_type="audio/webm",
+        )
+
+        result = service.transcribe_audio(
+            audio_file=audio,
+            intake_note="のどが痛い",
+            is_final=True,
+        )
+
+        self.assertEqual(
+            result,
+            "咽頭痛があります。",
+        )
+        mock_client.responses.create.assert_not_called()
+
+    @patch("soap.services.speech_service.client")
+    def test_invalid_reconciliation_falls_back_to_accurate_text(
+        self,
+        mock_client,
+    ):
+        mock_client.audio.transcriptions.create.side_effect = [
+            SimpleNamespace(
+                text="咳があります。"
+            ),
+            SimpleNamespace(
+                segments=[
+                    {
+                        "speaker": "speaker_0",
+                        "text": "咳があります。",
+                    }
+                ]
+            ),
+        ]
+        mock_client.responses.create.return_value = (
+            SimpleNamespace(
+                output_text="診察内容を要約しました。"
+            )
+        )
+
+        service = SpeechService.__new__(SpeechService)
+        service.medical_dictionary = Mock()
+        service.medical_dictionary.build_transcription_prompt.return_value = (
+            "咳"
+        )
+        service.medical_dictionary.correct.side_effect = (
+            lambda text: text
+        )
+
+        audio = SimpleUploadedFile(
+            "final.webm",
+            b"audio",
+            content_type="audio/webm",
+        )
+
+        result = service.transcribe_audio(
+            audio_file=audio,
+            intake_note="咳",
+            is_final=True,
+        )
+
+        self.assertEqual(result, "咳があります。")
+
+    def test_merged_transcript_accepts_only_speaker_lines(self):
+        valid = (
+            "```text\n"
+            "話者A：こんにちは。\n"
+            "話者B：はい。\n"
+            "```"
+        )
+
+        result = SpeechService.clean_merged_transcript(
+            valid
+        )
+
+        self.assertEqual(
+            result,
+            "話者A：こんにちは。\n話者B：はい。",
+        )
+        self.assertEqual(
+            SpeechService.clean_merged_transcript(
+                "SOAP：咽頭炎"
+            ),
+            "",
         )
 
 
