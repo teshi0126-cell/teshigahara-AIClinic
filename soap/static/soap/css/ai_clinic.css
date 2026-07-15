@@ -230,6 +230,33 @@ button:disabled{
     font-weight:bold;
 }
 
+.recovery-notice{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    margin:12px 0;
+    padding:12px;
+    border:1px solid #f59e0b;
+    border-radius:8px;
+    background:#fffbeb;
+    color:#92400e;
+}
+
+.recovery-notice[hidden]{
+    display:none;
+}
+
+.recovery-notice p{
+    margin:4px 0 0;
+    font-size:13px;
+}
+
+.recovery-notice button{
+    flex-shrink:0;
+    margin-right:0;
+}
+
 .session-hint.error{
     color:#b91c1c;
 }

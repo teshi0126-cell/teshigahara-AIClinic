@@ -1327,6 +1327,18 @@ class OperationsReadinessTests(SimpleTestCase):
         )
         self.assertNotIn("0.0.0.0", self.start_script)
         self.assertNotIn("manage.py runserver", self.start_script)
+        self.assertIn(
+            "manage.py collectstatic --noinput",
+            self.start_script,
+        )
+        self.assertLess(
+            self.start_script.index(
+                "manage.py collectstatic --noinput"
+            ),
+            self.start_script.rindex(
+                "waitress-serve.exe"
+            ),
+        )
 
     def test_setup_prepares_complete_production_runtime(self):
         for command in [
@@ -1415,5 +1427,224 @@ class OperationsReadinessTests(SimpleTestCase):
         )
         self.assertIn(
             "実患者",
+            guide,
+        )
+
+
+class SessionRecoveryWorkflowTests(SimpleTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.root_dir = Path(__file__).resolve().parent.parent
+        soap_dir = Path(__file__).resolve().parent
+        cls.recorder_source = (
+            soap_dir
+            / "static"
+            / "soap"
+            / "js"
+            / "recorder.js"
+        ).read_text(encoding="utf-8")
+        cls.template_source = (
+            soap_dir
+            / "templates"
+            / "soap"
+            / "index.html"
+        ).read_text(encoding="utf-8")
+
+    def test_recovery_notice_and_discard_control_are_visible(self):
+        self.assertIn(
+            'id="recoveryNotice"',
+            self.template_source,
+        )
+        self.assertIn(
+            'id="discardRecoveryBtn"',
+            self.template_source,
+        )
+        self.assertIn(
+            "録音音声は保存されていません",
+            self.template_source,
+        )
+
+    def test_recovery_uses_tab_scoped_storage_with_expiry(self):
+        self.assertIn(
+            'RECOVERY_STORAGE_KEY = '
+            '"aiclinic.unsavedEncounter.v1"',
+            self.recorder_source,
+        )
+        self.assertIn(
+            "RECOVERY_MAX_AGE_MS = 12 * 60 * 60 * 1000",
+            self.recorder_source,
+        )
+        self.assertIn(
+            "sessionStorage.setItem",
+            self.recorder_source,
+        )
+        self.assertIn(
+            "sessionStorage.getItem",
+            self.recorder_source,
+        )
+        self.assertNotIn(
+            "localStorage",
+            self.recorder_source,
+        )
+
+    def test_recovery_payload_contains_text_but_not_audio(self):
+        payload_section = self.recorder_source.split(
+            "const payload = {",
+            1,
+        )[1].split(
+            "};",
+            1,
+        )[0]
+
+        for field in [
+            "intakeNote",
+            "medicalNote",
+            "soapResult",
+            "encounterJson",
+            "referralResult",
+            "conversationChunks",
+        ]:
+            self.assertIn(field, payload_section)
+
+        for forbidden in [
+            "retainedFinalBlob",
+            "fullAudioChunks",
+            "apiKey",
+            "csrf",
+        ]:
+            self.assertNotIn(forbidden, payload_section)
+
+    def test_recovery_restores_all_saved_text_fields(self):
+        restore_section = self.recorder_source.split(
+            "function restoreRecoveryDraft()",
+            1,
+        )[1].split(
+            "function discardRecoveredDraft()",
+            1,
+        )[0]
+
+        for assignment in [
+            "intakeNote.value =",
+            "medicalNote.value =",
+            "soapResult.value =",
+            "encounterJson.value =",
+            "referralResult.value =",
+            "conversationChunks =",
+        ]:
+            self.assertIn(assignment, restore_section)
+
+        self.assertIn(
+            "age > RECOVERY_MAX_AGE_MS",
+            restore_section,
+        )
+
+    def test_interrupted_recording_warns_audio_is_not_restored(self):
+        restore_section = self.recorder_source.split(
+            "function restoreRecoveryDraft()",
+            1,
+        )[1].split(
+            "function discardRecoveredDraft()",
+            1,
+        )[0]
+
+        self.assertIn("draft.wasBusy", restore_section)
+        self.assertIn(
+            "録音音声は保存されていません",
+            restore_section,
+        )
+
+    def test_recovery_is_cleared_after_clinical_handoff(self):
+        new_session_section = self.recorder_source.split(
+            "function startNewSession()",
+            1,
+        )[1].split(
+            "function getCsrfToken()",
+            1,
+        )[0]
+        completion_section = self.recorder_source.split(
+            "completeSessionBtn.onclick",
+            1,
+        )[1].split(
+            "startBtn.onclick",
+            1,
+        )[0]
+        discard_section = self.recorder_source.split(
+            "function discardRecoveredDraft()",
+            1,
+        )[1].split(
+            "function markSessionDirty()",
+            1,
+        )[0]
+
+        self.assertIn(
+            "clearRecoveryDraft()",
+            new_session_section,
+        )
+        self.assertIn(
+            "clearRecoveryDraft()",
+            completion_section,
+        )
+        self.assertIn(
+            "clearRecoveryDraft()",
+            discard_section,
+        )
+
+    def test_generated_outputs_are_saved_for_recovery(self):
+        self.assertGreaterEqual(
+            self.recorder_source.count(
+                "persistRecoveryDraft();"
+            ),
+            4,
+        )
+        self.assertIn(
+            'medicalNote.value += transcript + "\\n";\n'
+            "            markSessionDirty();",
+            self.recorder_source,
+        )
+        referral_section = self.recorder_source.split(
+            "if (data.referral_result)",
+            1,
+        )[1].split(
+            "if (data.error)",
+            1,
+        )[0]
+        self.assertIn(
+            "persistRecoveryDraft()",
+            referral_section,
+        )
+
+    def test_beforeunload_saves_draft_before_warning(self):
+        unload_section = self.recorder_source.split(
+            'window.addEventListener("beforeunload"',
+            1,
+        )[1]
+
+        persist_position = unload_section.index(
+            "persistRecoveryDraft()"
+        )
+        warning_position = unload_section.index(
+            "event.preventDefault()"
+        )
+        self.assertLess(
+            persist_position,
+            warning_position,
+        )
+
+    def test_operations_guide_describes_recovery_limits(self):
+        guide = (
+            self.root_dir
+            / "docs"
+            / "clinic_operations.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "未転記データの一時復元",
+            guide,
+        )
+        self.assertIn("12時間", guide)
+        self.assertIn(
+            "ブラウザーやPCを完全に終了した場合"
+            "の復元は保証されません",
             guide,
         )

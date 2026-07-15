@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>AIClinic</title>
-    <link rel="stylesheet" href="{% static 'soap/css/ai_clinic.css' %}?v=24">
+    <link rel="stylesheet" href="{% static 'soap/css/ai_clinic.css' %}?v=26">
 </head>
 <body>
 
@@ -37,6 +37,22 @@
             <button type="button" id="retryFinalBtn" class="warning" hidden>↻ 最終処理を再試行</button>
         </div>
         <p id="sessionHint" class="session-hint">受付問診を入力して診察を開始できます。</p>
+
+        <div id="recoveryNotice" class="recovery-notice" hidden>
+            <div>
+                <strong>前回の未転記データを復元しました。</strong>
+                <p>
+                    テキストのみの一時復元です。録音音声は保存されていません。
+                </p>
+            </div>
+            <button
+                type="button"
+                id="discardRecoveryBtn"
+                class="warning"
+            >
+                復元内容を破棄
+            </button>
+        </div>
 
         <div class="microphone-monitor">
             <div class="microphone-device">
@@ -149,7 +165,7 @@
 
 </div>
 
-<script src="{% static 'soap/js/recorder.js' %}?v=24"></script>
+<script src="{% static 'soap/js/recorder.js' %}?v=26"></script>
 
 </body>
 </html>
