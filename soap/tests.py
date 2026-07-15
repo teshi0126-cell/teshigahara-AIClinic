@@ -366,6 +366,246 @@ class SpeechServiceTests(SimpleTestCase):
         )
 
 
+class SpeakerDiarizationReliabilityTests(SimpleTestCase):
+    def test_question_and_short_answer_are_dialogue_evidence(self):
+        transcript = (
+            "話者A：お薬は飲んでいますか？\n"
+            "話者A：はい。"
+        )
+
+        self.assertTrue(
+            SpeechService.has_dialogue_evidence(
+                transcript
+            )
+        )
+        self.assertFalse(
+            SpeechService.has_dialogue_evidence(
+                "話者A：本日の検査結果を説明します。"
+            )
+        )
+
+    @patch("soap.services.speech_service.client")
+    def test_single_speaker_labels_are_repaired_without_text_change(
+        self,
+        mock_client,
+    ):
+        mock_client.responses.create.return_value = (
+            SimpleNamespace(
+                output_text=(
+                    "話者A：お薬は飲んでいますか？\n"
+                    "話者B：はい。"
+                )
+            )
+        )
+        service = SpeechService.__new__(SpeechService)
+
+        result = service.repair_single_speaker_diarization(
+            accurate_text=(
+                "お薬は飲んでいますか？はい。"
+            ),
+            diarized_text=(
+                "話者A：お薬は飲んでいますか？\n"
+                "話者A：はい。"
+            ),
+        )
+
+        self.assertEqual(
+            result,
+            "話者A：お薬は飲んでいますか？\n"
+            "話者B：はい。",
+        )
+
+    @patch("soap.services.speech_service.client")
+    def test_repair_is_rejected_when_spoken_words_change(
+        self,
+        mock_client,
+    ):
+        mock_client.responses.create.return_value = (
+            SimpleNamespace(
+                output_text=(
+                    "話者A：お薬は飲んでいますか？\n"
+                    "話者B：いいえ。"
+                )
+            )
+        )
+        service = SpeechService.__new__(SpeechService)
+
+        result = service.repair_single_speaker_diarization(
+            accurate_text=(
+                "お薬は飲んでいますか？はい。"
+            ),
+            diarized_text=(
+                "話者A：お薬は飲んでいますか？\n"
+                "話者A：はい。"
+            ),
+        )
+
+        self.assertEqual(result, "")
+
+    @patch("soap.services.speech_service.client")
+    def test_final_transcription_repairs_single_speaker_dialogue(
+        self,
+        mock_client,
+    ):
+        mock_client.audio.transcriptions.create.side_effect = [
+            SimpleNamespace(
+                text="お薬は飲んでいますか？はい。"
+            ),
+            SimpleNamespace(
+                segments=[
+                    SimpleNamespace(
+                        speaker="speaker_0",
+                        text="お薬は飲んでいますか？",
+                    ),
+                    SimpleNamespace(
+                        speaker="speaker_0",
+                        text="はい。",
+                    ),
+                ]
+            ),
+        ]
+        mock_client.responses.create.side_effect = [
+            SimpleNamespace(
+                output_text=(
+                    "話者A：お薬は飲んでいますか？\n"
+                    "話者B：はい。"
+                )
+            ),
+            SimpleNamespace(
+                output_text=(
+                    "話者A：お薬は飲んでいますか？\n"
+                    "話者B：はい。"
+                )
+            ),
+        ]
+        service = SpeechService.__new__(SpeechService)
+        service.medical_dictionary = Mock()
+        service.medical_dictionary.build_transcription_prompt.return_value = (
+            ""
+        )
+        service.medical_dictionary.correct.side_effect = (
+            lambda text: text
+        )
+        audio = SimpleUploadedFile(
+            "final.webm",
+            b"audio",
+            content_type="audio/webm",
+        )
+
+        result = service.transcribe_audio(
+            audio_file=audio,
+            is_final=True,
+        )
+
+        self.assertEqual(
+            result,
+            "話者A：お薬は飲んでいますか？\n"
+            "話者B：はい。",
+        )
+        self.assertEqual(
+            mock_client.responses.create.call_count,
+            2,
+        )
+
+    @patch("soap.services.speech_service.client")
+    def test_merge_cannot_collapse_multiple_speakers(
+        self,
+        mock_client,
+    ):
+        mock_client.audio.transcriptions.create.side_effect = [
+            SimpleNamespace(
+                text="体調はどうですか？変わりません。"
+            ),
+            SimpleNamespace(
+                segments=[
+                    SimpleNamespace(
+                        speaker="speaker_0",
+                        text="体調はどうですか？",
+                    ),
+                    SimpleNamespace(
+                        speaker="speaker_1",
+                        text="変わりません。",
+                    ),
+                ]
+            ),
+        ]
+        mock_client.responses.create.return_value = (
+            SimpleNamespace(
+                output_text=(
+                    "話者A：体調はどうですか？\n"
+                    "話者A：変わりません。"
+                )
+            )
+        )
+        service = SpeechService.__new__(SpeechService)
+        service.medical_dictionary = Mock()
+        service.medical_dictionary.build_transcription_prompt.return_value = (
+            ""
+        )
+        service.medical_dictionary.correct.side_effect = (
+            lambda text: text
+        )
+        audio = SimpleUploadedFile(
+            "final.webm",
+            b"audio",
+            content_type="audio/webm",
+        )
+
+        result = service.transcribe_audio(
+            audio_file=audio,
+            is_final=True,
+        )
+
+        self.assertEqual(
+            result,
+            "話者A：体調はどうですか？\n"
+            "話者B：変わりません。",
+        )
+
+    @patch("soap.services.speech_service.client")
+    def test_single_speaker_monologue_uses_accurate_text(
+        self,
+        mock_client,
+    ):
+        mock_client.audio.transcriptions.create.side_effect = [
+            SimpleNamespace(
+                text="本日の検査結果を説明します。"
+            ),
+            SimpleNamespace(
+                segments=[
+                    SimpleNamespace(
+                        speaker="speaker_0",
+                        text="本日の検査結果を説明します。",
+                    )
+                ]
+            ),
+        ]
+        service = SpeechService.__new__(SpeechService)
+        service.medical_dictionary = Mock()
+        service.medical_dictionary.build_transcription_prompt.return_value = (
+            ""
+        )
+        service.medical_dictionary.correct.side_effect = (
+            lambda text: text
+        )
+        audio = SimpleUploadedFile(
+            "final.webm",
+            b"audio",
+            content_type="audio/webm",
+        )
+
+        result = service.transcribe_audio(
+            audio_file=audio,
+            is_final=True,
+        )
+
+        self.assertEqual(
+            result,
+            "本日の検査結果を説明します。",
+        )
+        mock_client.responses.create.assert_not_called()
+
+
 class SOAPConfirmationGuardTests(SimpleTestCase):
     def test_confirmation_section_is_removed_when_missing_items_empty(self):
         soap = (
