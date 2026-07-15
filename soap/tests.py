@@ -1335,7 +1335,7 @@ class OperationsReadinessTests(SimpleTestCase):
             self.start_script.index(
                 "manage.py collectstatic --noinput"
             ),
-            self.start_script.index(
+            self.start_script.rindex(
                 "waitress-serve.exe"
             ),
         )
