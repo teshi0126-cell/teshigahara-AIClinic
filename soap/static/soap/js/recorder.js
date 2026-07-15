@@ -987,6 +987,8 @@ async function generateReferral() {
     if (data.referral_result) {
         referralResult.value = data.referral_result;
         statusText.innerText = "紹介状を作成しました。";
+        markSessionDirty();
+        persistRecoveryDraft();
     }
 
     if (data.error) {
