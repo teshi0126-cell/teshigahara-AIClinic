@@ -1327,6 +1327,18 @@ class OperationsReadinessTests(SimpleTestCase):
         )
         self.assertNotIn("0.0.0.0", self.start_script)
         self.assertNotIn("manage.py runserver", self.start_script)
+        self.assertIn(
+            "manage.py collectstatic --noinput",
+            self.start_script,
+        )
+        self.assertLess(
+            self.start_script.index(
+                "manage.py collectstatic --noinput"
+            ),
+            self.start_script.index(
+                "waitress-serve.exe"
+            ),
+        )
 
     def test_setup_prepares_complete_production_runtime(self):
         for command in [
