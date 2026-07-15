@@ -6,6 +6,7 @@ let sessionDirty = false;
 let allowPageUnload = false;
 let retainedFinalBlob = null;
 let retainedFinalTranscript = "";
+let recoverySaveTimer = null;
 
 let realtimeChunks = [];
 let fullAudioChunks = [];
@@ -28,6 +29,8 @@ let pcmSampleCount = 0;
 
 const REALTIME_CHUNK_SECONDS = 10;
 const MICROPHONE_GAIN = 2.5;
+const RECOVERY_STORAGE_KEY = "aiclinic.unsavedEncounter.v1";
+const RECOVERY_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 const newSessionBtn = document.getElementById("newSessionBtn");
 const startBtn = document.getElementById("startBtn");
@@ -36,6 +39,10 @@ const stopBtn = document.getElementById("stopBtn");
 const retryFinalBtn = document.getElementById("retryFinalBtn");
 const completeSessionBtn = document.getElementById("completeSessionBtn");
 const sessionHint = document.getElementById("sessionHint");
+const recoveryNotice = document.getElementById("recoveryNotice");
+const discardRecoveryBtn = document.getElementById(
+    "discardRecoveryBtn"
+);
 const soapForm = document.getElementById("soapForm");
 const statusText = document.getElementById("status");
 const soapStatus = document.getElementById("soapStatus");
@@ -107,12 +114,195 @@ function setSessionState(state, hint = "") {
     }
 }
 
+
+function recoveryText(value) {
+    return typeof value === "string" ? value : "";
+}
+
+function clearRecoveryDraft() {
+    if (recoverySaveTimer) {
+        clearTimeout(recoverySaveTimer);
+        recoverySaveTimer = null;
+    }
+
+    try {
+        sessionStorage.removeItem(RECOVERY_STORAGE_KEY);
+    } catch (error) {
+        console.warn("Recovery storage unavailable");
+    }
+
+    if (recoveryNotice) {
+        recoveryNotice.hidden = true;
+    }
+}
+
+function persistRecoveryDraft() {
+    recoverySaveTimer = null;
+
+    if (!sessionDirty) return;
+
+    const payload = {
+        version: 1,
+        savedAt: Date.now(),
+        wasBusy: isSessionBusy(),
+        intakeNote: intakeNote.value,
+        medicalNote: medicalNote.value,
+        soapResult: soapResult.value,
+        encounterJson: encounterJson.value,
+        referralResult: referralResult.value,
+        conversationChunks: conversationChunks
+    };
+
+    try {
+        sessionStorage.setItem(
+            RECOVERY_STORAGE_KEY,
+            JSON.stringify(payload)
+        );
+    } catch (error) {
+        console.warn("Recovery storage unavailable");
+    }
+}
+
+function scheduleRecoverySave() {
+    if (recoverySaveTimer) {
+        clearTimeout(recoverySaveTimer);
+    }
+
+    recoverySaveTimer = setTimeout(
+        persistRecoveryDraft,
+        250
+    );
+}
+
+function restoreRecoveryDraft() {
+    let rawDraft;
+
+    try {
+        rawDraft = sessionStorage.getItem(
+            RECOVERY_STORAGE_KEY
+        );
+    } catch (error) {
+        console.warn("Recovery storage unavailable");
+        return false;
+    }
+
+    if (!rawDraft) return false;
+
+    let draft;
+
+    try {
+        draft = JSON.parse(rawDraft);
+    } catch (error) {
+        clearRecoveryDraft();
+        return false;
+    }
+
+    const age = Date.now() - Number(draft.savedAt || 0);
+
+    if (
+        draft.version !== 1
+        || age < 0
+        || age > RECOVERY_MAX_AGE_MS
+    ) {
+        clearRecoveryDraft();
+        return false;
+    }
+
+    const pageAlreadyHasContent = [
+        intakeNote.value,
+        medicalNote.value,
+        soapResult.value,
+        encounterJson.value,
+        referralResult.value
+    ].some(value => value.trim());
+
+    if (pageAlreadyHasContent) return false;
+
+    intakeNote.value = recoveryText(draft.intakeNote);
+    medicalNote.value = recoveryText(draft.medicalNote);
+    soapResult.value = recoveryText(draft.soapResult);
+    encounterJson.value = recoveryText(draft.encounterJson);
+    referralResult.value = recoveryText(draft.referralResult);
+
+    conversationChunks = Array.isArray(
+        draft.conversationChunks
+    )
+        ? draft.conversationChunks.filter(
+            value => typeof value === "string"
+        )
+        : [];
+
+    const restoredContent = [
+        intakeNote.value,
+        medicalNote.value,
+        soapResult.value,
+        encounterJson.value,
+        referralResult.value
+    ].some(value => value.trim());
+
+    if (!restoredContent) {
+        clearRecoveryDraft();
+        return false;
+    }
+
+    sessionDirty = true;
+    recordingConsent.checked = false;
+    statusText.innerText = "未転記データを復元しました";
+
+    if (recoveryNotice) {
+        recoveryNotice.hidden = false;
+    }
+
+    if (soapResult.value.trim()) {
+        setSoapStatus("復元済み");
+        setSessionState(
+            "ready",
+            "前回の未転記SOAPを復元しました。"
+            + "DigiKar転記後に転記済みを押してください。"
+        );
+    } else {
+        setSoapStatus("未生成");
+        setSessionState(
+            "idle",
+            draft.wasBusy
+                ? "録音音声は保存されていません。"
+                    + "復元した文字起こしを確認してください。"
+                : "前回の未転記内容を復元しました。"
+        );
+    }
+
+    return true;
+}
+
+function discardRecoveredDraft() {
+    if (
+        !window.confirm(
+            "復元した未転記内容を破棄しますか？"
+        )
+    ) {
+        return;
+    }
+
+    resetRecordingBuffers();
+    clearSessionOutputs();
+    sessionDirty = false;
+    clearRecoveryDraft();
+    statusText.innerText = "待機中";
+    setSoapStatus("待機中");
+    setSessionState(
+        "idle",
+        "受付問診を入力して診察を開始できます。"
+    );
+}
+
 function markSessionDirty() {
     sessionDirty = true;
 
     if (sessionState === "ready") {
         completeSessionBtn.disabled = false;
     }
+
+    scheduleRecoverySave();
 }
 
 function resetRecordingBuffers() {
@@ -170,6 +360,7 @@ function startNewSession() {
     resetRecordingBuffers();
     clearSessionOutputs();
     sessionDirty = false;
+    clearRecoveryDraft();
 
     statusText.innerText = "待機中";
     setSoapStatus("待機中");
@@ -357,6 +548,11 @@ async function updateSOAP() {
         );
         setSoapStatus("再試行待ち");
         return false;
+    }
+
+    if (data.soap_result) {
+        markSessionDirty();
+        persistRecoveryDraft();
     }
 
     return Boolean(data.soap_result);
@@ -618,6 +814,7 @@ function flushRealtimeTranscripts() {
         if (transcript) {
             conversationChunks.push(transcript);
             medicalNote.value += transcript + "\n";
+            markSessionDirty();
         }
     }
 }
@@ -812,11 +1009,13 @@ function copyReferral() {
 
 newSessionBtn.onclick = startNewSession;
 retryFinalBtn.onclick = retryFinalProcessing;
+discardRecoveryBtn.onclick = discardRecoveredDraft;
 
 completeSessionBtn.onclick = function() {
     if (sessionState !== "ready") return;
 
     sessionDirty = false;
+    clearRecoveryDraft();
     statusText.innerText = "DigiKar転記済み";
     setSessionState(
         "ready",
@@ -950,6 +1149,8 @@ soapForm.addEventListener("submit", function() {
 });
 
 window.addEventListener("beforeunload", function(event) {
+    persistRecoveryDraft();
+
     if (
         allowPageUnload
         || (!sessionDirty && !isSessionBusy())
@@ -961,20 +1162,27 @@ window.addEventListener("beforeunload", function(event) {
     event.returnValue = "";
 });
 
-if (soapResult.value.trim()) {
-    sessionDirty = true;
-    setSessionState(
-        "ready",
-        "SOAPをDigiKarへ転記後、"
-        + "「DigiKar転記済み」を押してください。"
-    );
-} else {
-    sessionDirty = Boolean(
-        intakeNote.value.trim()
-        || medicalNote.value.trim()
-    );
-    setSessionState(
-        "idle",
-        "受付問診を入力して診察を開始できます。"
-    );
+if (!restoreRecoveryDraft()) {
+    if (soapResult.value.trim()) {
+        sessionDirty = true;
+        setSessionState(
+            "ready",
+            "SOAPをDigiKarへ転記後、"
+            + "「DigiKar転記済み」を押してください。"
+        );
+        persistRecoveryDraft();
+    } else {
+        sessionDirty = Boolean(
+            intakeNote.value.trim()
+            || medicalNote.value.trim()
+        );
+        setSessionState(
+            "idle",
+            "受付問診を入力して診察を開始できます。"
+        );
+
+        if (sessionDirty) {
+            persistRecoveryDraft();
+        }
+    }
 }
