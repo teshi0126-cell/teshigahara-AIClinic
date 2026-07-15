@@ -66,7 +66,7 @@ class SpeechService:
             )
         except Exception as exc:
             accurate_error = exc
-            logger.exception(
+            logger.error(
                 "Prompted final transcription failed"
             )
 
@@ -76,7 +76,7 @@ class SpeechService:
             )
         except Exception as exc:
             diarized_error = exc
-            logger.exception(
+            logger.error(
                 "Speaker diarization failed"
             )
 
@@ -91,7 +91,7 @@ class SpeechService:
                     intake_note=intake_note,
                 )
             except Exception:
-                logger.exception(
+                logger.error(
                     "Transcript reconciliation failed"
                 )
                 merged = ""

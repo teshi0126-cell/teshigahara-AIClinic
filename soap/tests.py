@@ -1259,3 +1259,161 @@ class SecurityAndPrivacyTests(SimpleTestCase):
             self.assertIn(key, example)
 
         self.assertNotIn("sk-", example)
+
+
+class OperationsReadinessTests(SimpleTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.root_dir = Path(__file__).resolve().parent.parent
+        cls.start_script = (
+            cls.root_dir / "start_aiclinic.bat"
+        ).read_text(encoding="utf-8")
+        cls.setup_script = (
+            cls.root_dir / "setup_aiclinic.bat"
+        ).read_text(encoding="utf-8")
+        cls.backup_script = (
+            cls.root_dir / "backup_aiclinic.bat"
+        ).read_text(encoding="utf-8")
+
+    def test_health_endpoint_exposes_no_configuration(self):
+        response = self.client.get("/health/")
+        payload = response.json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["service"], "AIClinic")
+
+        serialized = json.dumps(payload)
+        self.assertNotIn("key", serialized.lower())
+        self.assertNotIn("database", serialized.lower())
+        self.assertIn(
+            "no-cache",
+            response.headers["Cache-Control"],
+        )
+
+    def test_health_endpoint_is_get_only(self):
+        response = self.client.post("/health/")
+
+        self.assertEqual(response.status_code, 405)
+
+    def test_windows_scripts_select_utf8_code_page(self):
+        for script in [
+            self.setup_script,
+            self.start_script,
+            self.backup_script,
+        ]:
+            self.assertIn(
+                "chcp 65001 >nul",
+                script,
+            )
+            self.assertEqual(
+                script,
+                script.encode("ascii").decode("ascii"),
+            )
+
+    def test_start_script_uses_waitress_on_loopback_only(self):
+        self.assertIn(
+            "waitress-serve.exe",
+            self.start_script,
+        )
+        self.assertIn(
+            "--listen=127.0.0.1:8000",
+            self.start_script,
+        )
+        self.assertIn(
+            "--no-expose-tracebacks",
+            self.start_script,
+        )
+        self.assertNotIn("0.0.0.0", self.start_script)
+        self.assertNotIn("manage.py runserver", self.start_script)
+
+    def test_setup_prepares_complete_production_runtime(self):
+        for command in [
+            "scripts\\configure_production.py",
+            "requirements-production.txt",
+            "manage.py migrate",
+            "manage.py collectstatic --noinput",
+            "manage.py check --deploy --fail-level ERROR",
+        ]:
+            self.assertIn(command, self.setup_script)
+
+    def test_production_dependencies_are_pinned(self):
+        requirements = (
+            self.root_dir / "requirements-production.txt"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("waitress==3.0.2", requirements)
+        self.assertIn("whitenoise==6.12.0", requirements)
+
+    def test_production_static_files_are_conditional(self):
+        settings_source = (
+            self.root_dir
+            / "clinic"
+            / "settings.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "if PRODUCTION_MODE:",
+            settings_source,
+        )
+        self.assertIn(
+            "whitenoise.middleware.WhiteNoiseMiddleware",
+            settings_source,
+        )
+        self.assertIn(
+            "CompressedStaticFilesStorage",
+            settings_source,
+        )
+
+    def test_logs_do_not_include_exception_tracebacks(self):
+        views_source = (
+            Path(__file__).resolve().parent
+            / "views.py"
+        ).read_text(encoding="utf-8")
+        speech_source = (
+            Path(__file__).resolve().parent
+            / "services"
+            / "speech_service.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("logger.exception", views_source)
+        self.assertNotIn("logger.exception", speech_source)
+        self.assertIn(
+            'logger.error("SOAP generation failed")',
+            views_source,
+        )
+
+    def test_backups_and_generated_files_are_not_committed(self):
+        gitignore = (
+            self.root_dir / ".gitignore"
+        ).read_text(encoding="utf-8")
+        backup_source = (
+            self.root_dir
+            / "scripts"
+            / "backup_database.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("backups/", gitignore)
+        self.assertIn("staticfiles/", gitignore)
+        self.assertIn("KEEP_BACKUPS = 14", backup_source)
+
+    def test_operations_guide_warns_about_unsaved_records(self):
+        guide = (
+            self.root_dir
+            / "docs"
+            / "clinic_operations.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "未転記の",
+            guide,
+        )
+        self.assertIn(
+            "0.0.0.0",
+            guide,
+        )
+        self.assertIn(
+            "実患者",
+            guide,
+        )

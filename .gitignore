@@ -48,3 +48,6 @@ venv/
 .venv/
 __pycache__/
 *.py[cod]
+staticfiles/
+backups/
+*.env.tmp

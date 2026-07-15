@@ -1,0 +1,91 @@
+# AIClinic 院内運用手順
+
+## 1. 運用範囲
+
+この構成は、診察室のWindows PC 1台から
+`http://127.0.0.1:8000/` を利用する院内試用向けです。
+
+Waitressは `127.0.0.1` のみに接続するため、同じ院内LANの
+別PCからもアクセスできません。LAN共有や院外アクセスを行う場合は、
+HTTPS、利用者認証、ファイアウォール設計を追加してから構成を変更します。
+
+## 2. 初回設定
+
+1. AIClinicとDigiKarを終了する。
+2. `C:\AIClinic\setup_aiclinic.bat` をダブルクリックする。
+3. 「初回設定が完了しました」と表示されるまで画面を閉じない。
+4. エラー時は画面を撮影し、表示内容を開発担当へ伝える。
+
+初回設定では以下を実行します。
+
+- Django秘密鍵の安全な自動生成
+- DEBUG無効化とローカルアクセス設定
+- WaitressとWhiteNoiseの導入
+- Django migration
+- CSS・JavaScriptの運用配信用準備
+- Djangoシステムチェック
+
+OpenAI APIキーやDjango秘密鍵の値は画面へ表示しません。
+
+## 3. 通常の起動と終了
+
+### 起動
+
+`C:\AIClinic\start_aiclinic.bat` をダブルクリックします。
+ブラウザーが自動的に開きます。
+
+### 稼働確認
+
+ブラウザーで `http://127.0.0.1:8000/health/` を開き、
+次の表示になればサーバーは正常です。
+
+```json
+{"status": "ok", "service": "AIClinic"}
+```
+
+この確認画面にはAPIキー、設定値、診療情報を表示しません。
+
+### 終了
+
+Waitressの黒い画面を選び、`Ctrl+C` を1回押します。
+録音中・最終処理中は終了しないでください。
+
+## 4. バックアップ
+
+診療開始前または更新作業前に
+`C:\AIClinic\backup_aiclinic.bat` を実行します。
+
+バックアップは `C:\AIClinic\backups\database` に保存され、
+新しいものから14世代を保持します。このフォルダーはGitHubへ送信されません。
+
+現在、診察の文字起こしやSOAPはデータベースへ永続保存していません。
+このバックアップの対象はDjangoの管理データです。
+
+## 5. 異常終了からの復旧
+
+1. 録音画面が残っている場合は、ブラウザーを閉じない。
+2. Waitressの黒い画面で `Ctrl+C` を押す。
+3. 黒い画面を閉じる。
+4. `start_aiclinic.bat` を再実行する。
+5. API失敗だけの場合は、画面の「最終処理を再試行」を先に使用する。
+
+PC再起動やブラウザー終了後は、画面内だけに保持していた未転記の
+文字起こし・SOAPを復元できません。DigiKar転記前は画面を閉じないでください。
+
+## 6. 更新後の確認
+
+```powershell
+git switch main
+git pull
+.\venv\Scripts\python.exe manage.py test
+```
+
+依存関係や運用設定が変更された更新では、
+`setup_aiclinic.bat` をもう一度実行します。
+
+## 7. 禁止事項
+
+- `start_aiclinic.bat` の `127.0.0.1` を安易に `0.0.0.0` へ変更しない。
+- `.env`、`db.sqlite3`、録音ファイルをGitHubへ登録しない。
+- 実患者の文字起こしやSOAPを開発用Issue・PRへ貼り付けない。
+- 運用中に `manage.py runserver` を使用しない。

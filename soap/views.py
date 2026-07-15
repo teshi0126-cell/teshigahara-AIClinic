@@ -414,7 +414,7 @@ def transcribe_chunk(request):
         )
 
     except Exception:
-        logger.exception("Audio transcription failed")
+        logger.error("Audio transcription failed")
         return safe_error_response(
             "TRANSCRIPTION_FAILED"
         )
@@ -477,7 +477,7 @@ def generate_soap(request):
         )
 
     except Exception:
-        logger.exception("SOAP generation failed")
+        logger.error("SOAP generation failed")
         return safe_error_response(
             "SOAP_GENERATION_FAILED"
         )
@@ -553,7 +553,7 @@ def generate_referral(request):
         )
 
     except Exception:
-        logger.exception("Referral generation failed")
+        logger.error("Referral generation failed")
         return safe_error_response(
             "REFERRAL_GENERATION_FAILED"
         )

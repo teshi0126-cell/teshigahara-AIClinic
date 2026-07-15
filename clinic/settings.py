@@ -61,6 +61,12 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+if PRODUCTION_MODE:
+    MIDDLEWARE.insert(
+        1,
+        "whitenoise.middleware.WhiteNoiseMiddleware",
+    )
+
 ROOT_URLCONF = "clinic.urls"
 
 TEMPLATES = [
@@ -122,6 +128,21 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+if PRODUCTION_MODE:
+    STORAGES = {
+        "default": {
+            "BACKEND": (
+                "django.core.files.storage.FileSystemStorage"
+            ),
+        },
+        "staticfiles": {
+            "BACKEND": (
+                "whitenoise.storage."
+                "CompressedStaticFilesStorage"
+            ),
+        },
+    }
+
 # 共通のブラウザー防御。HTTPS強制は院内ローカルHTTPを壊さないよう
 # DJANGO_HTTPS=true の環境だけで有効化する。
 SECURE_CONTENT_TYPE_NOSNIFF = True
@@ -137,3 +158,32 @@ HTTPS_ENABLED = (
 SESSION_COOKIE_SECURE = HTTPS_ENABLED
 CSRF_COOKIE_SECURE = HTTPS_ENABLED
 SECURE_SSL_REDIRECT = PRODUCTION_MODE and HTTPS_ENABLED
+
+# ログには診察本文やリクエスト本文を出さない。
+# API処理の失敗は固定イベント名だけを記録する。
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "clinic": {
+            "format": (
+                "{asctime} {levelname} "
+                "{name} {message}"
+            ),
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "clinic",
+        },
+    },
+    "loggers": {
+        "soap": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+    },
+}
