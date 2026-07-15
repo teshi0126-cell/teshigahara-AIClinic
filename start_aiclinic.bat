@@ -22,6 +22,14 @@ set DJANGO_DEBUG=false
 set DJANGO_HTTPS=false
 set DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
 
+echo [AIClinic] Updating interface files.
+"venv\Scripts\python.exe" manage.py collectstatic --noinput
+if errorlevel 1 (
+    echo ERROR: Static file update failed.
+    pause
+    exit /b 1
+)
+
 echo [AIClinic] Starting at http://127.0.0.1:8000/
 echo To stop the server, press Ctrl+C once in this window.
 start "" "http://127.0.0.1:8000/"
